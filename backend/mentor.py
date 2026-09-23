@@ -6,17 +6,20 @@ import tempfile
 from typing import Dict, Any, List, Optional
 from backend.config import NOTEBOOKLM_NOTEBOOK_ID, NOTEBOOKLM_AUTH_TOKEN
 
+# Dedicated isolated profile name for this project to prevent interference with other local apps
+PROJECT_PROFILE_NAME = "chessbooklm"
+
 class MentorService:
     """
     Pluggable AI Chess Mentor Service.
-    Queries NotebookLM via notebooklm-py, handles account authentication (fresh login, profile switching, cookies),
-    lists user notebooks, and updates active mentor context.
+    Queries NotebookLM via notebooklm-py using a project-isolated profile ('chessbooklm')
+    to prevent interference with any other application on your machine.
     """
 
     def __init__(self, notebook_id: str = "", auth_token: str = ""):
         self.notebook_id = notebook_id or NOTEBOOKLM_NOTEBOOK_ID
         self.auth_token = auth_token or NOTEBOOKLM_AUTH_TOKEN
-        self.active_profile = "default"
+        self.active_profile = PROJECT_PROFILE_NAME
 
     def _get_notebooklm_cmd(self) -> str:
         venv_cmd = os.path.join(os.getcwd(), "venv", "Scripts", "notebooklm.exe")
@@ -28,15 +31,16 @@ class MentorService:
         return "notebooklm"
 
     def _build_cmd(self, *args) -> List[str]:
-        cmd = [self._get_notebooklm_cmd()]
-        if self.active_profile and self.active_profile != "default":
-            cmd.extend(["--profile", self.active_profile])
+        """
+        Injects --profile chessbooklm into every command to isolate credentials & storage.
+        """
+        cmd = [self._get_notebooklm_cmd(), "--profile", self.active_profile]
         cmd.extend(args)
         return cmd
 
     async def get_auth_status(self) -> Dict[str, Any]:
         """
-        Checks authentication status using `notebooklm doctor --json`.
+        Checks authentication status using `notebooklm --profile chessbooklm doctor --json`.
         """
         try:
             cmd = self._build_cmd("doctor", "--json")
@@ -68,17 +72,12 @@ class MentorService:
 
     async def trigger_login(self, email: Optional[str] = None, fresh: bool = True, profile_name: Optional[str] = None) -> Dict[str, Any]:
         """
-        Spawns notebooklm login command in background.
+        Spawns notebooklm login command in background using project profile.
         Setting fresh=True forces a clean session so Google prompts for User Email & Password.
         """
         try:
-            cmd = [self._get_notebooklm_cmd()]
-            
             target_profile = profile_name or self.active_profile
-            if target_profile and target_profile != "default":
-                cmd.extend(["--profile", target_profile])
-                
-            cmd.append("login")
+            cmd = [self._get_notebooklm_cmd(), "--profile", target_profile, "login"]
 
             # Force fresh session to prompt for email/password instead of reusing Chrome default profile
             if fresh:
@@ -91,7 +90,7 @@ class MentorService:
             subprocess.Popen(cmd)
             return {
                 "success": True,
-                "message": f"Fresh login browser window launched for account profile '{target_profile}'. Please enter your Google Email & Password in the browser window.",
+                "message": f"Fresh login browser window launched for isolated profile '{target_profile}'. Please enter your Google Email & Password in the browser window.",
                 "profile": target_profile
             }
         except Exception as e:
@@ -123,40 +122,27 @@ class MentorService:
                             p_name = parts[0].replace("*", "").strip()
                             profiles.append({"name": p_name, "is_active": p_name == self.active_profile})
                 if not profiles:
-                    profiles = [{"name": "default", "is_active": True}]
+                    profiles = [{"name": self.active_profile, "is_active": True}]
                 return profiles
         except Exception as e:
             print(f"[MentorService] Profile list error: {e}")
 
-        return [{"name": "default", "is_active": True}]
+        return [{"name": self.active_profile, "is_active": True}]
 
     async def switch_profile(self, profile_name: str) -> Dict[str, Any]:
         """
         Switches active notebooklm profile.
         """
-        try:
-            cmd = [self._get_notebooklm_cmd(), "profile", "switch", profile_name]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            await process.communicate()
-            self.active_profile = profile_name
-            return {
-                "success": True,
-                "message": f"Switched to profile '{profile_name}'.",
-                "profile": profile_name
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Failed to switch profile: {str(e)}"
-            }
+        self.active_profile = profile_name
+        return {
+            "success": True,
+            "message": f"Switched to profile '{profile_name}'.",
+            "profile": profile_name
+        }
 
     async def logout(self) -> Dict[str, Any]:
         """
-        Logs out of the current Google account profile by clearing stored credentials.
+        Logs out of the current project profile by clearing stored credentials.
         """
         try:
             cmd = self._build_cmd("auth", "logout")
@@ -168,7 +154,7 @@ class MentorService:
             await process.communicate()
             return {
                 "success": True,
-                "message": "Logged out successfully. Saved credentials cleared."
+                "message": f"Logged out profile '{self.active_profile}'. Saved credentials cleared."
             }
         except Exception as e:
             return {
@@ -178,7 +164,7 @@ class MentorService:
 
     async def import_cookies(self, cookies_json_str: str) -> Dict[str, Any]:
         """
-        Imports authentication cookies from JSON content.
+        Imports authentication cookies from JSON content for the isolated profile.
         """
         try:
             cookies_data = json.loads(cookies_json_str)
@@ -201,7 +187,7 @@ class MentorService:
                 pass
 
             if process.returncode == 0:
-                return {"success": True, "message": "Cookies imported successfully! Account authenticated."}
+                return {"success": True, "message": f"Cookies imported into profile '{self.active_profile}' successfully!"}
             else:
                 err = stderr.decode("utf-8", errors="ignore") if stderr else "Import failed"
                 return {"success": False, "message": f"Cookie import failed: {err}"}
@@ -212,7 +198,7 @@ class MentorService:
 
     async def list_notebooks(self) -> List[Dict[str, Any]]:
         """
-        Lists all available NotebookLM notebooks for the logged-in user profile.
+        Lists all available NotebookLM notebooks for the project profile.
         """
         try:
             cmd = self._build_cmd("list", "--json")
