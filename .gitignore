@@ -5,3 +5,5 @@ __pycache__/
 .notebooklm_cookies.json
 *.exe
 .DS_Store
+scratch_res.json
+scratch/
