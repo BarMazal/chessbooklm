@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess AI Mentor & Stockfish Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Header Navigation -->
+        <header class="app-header">
+            <div class="logo-section">
+                <div class="logo-icon">♟️</div>
+                <div class="logo-text">
+                    <h1>Chess AI Mentor</h1>
+                    <span class="subtitle">Stockfish 16 + NotebookLM Integration</span>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="status-badge" id="engine-status-badge">
+                    <span class="status-dot green"></span>
+                    <span id="engine-status-text">Engine Ready</span>
+                </div>
+                <div class="status-badge" id="notebook-status-badge">
+                    <span class="status-dot orange"></span>
+                    <span id="notebook-status-text">NotebookLM Standby</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <!-- Left Workspace: Chess Board & Eval Bar -->
+            <section class="board-section">
+                <!-- Vertical Eval Bar -->
+                <div class="eval-bar-container">
+                    <div class="eval-bar" id="eval-bar">
+                        <div class="eval-fill white-fill" id="eval-white-fill"></div>
+                    </div>
+                    <div class="eval-score-text" id="eval-score-badge">+0.0</div>
+                </div>
+
+                <!-- Board Wrapper with Canvas for Arrows -->
+                <div class="board-wrapper">
+                    <div id="chessboard" class="chessboard"></div>
+                    <svg id="board-arrows-svg" class="board-arrows-svg"></svg>
+                </div>
+
+                <!-- Board Action Controls Bar -->
+                <div class="board-controls">
+                    <button class="btn btn-secondary" id="btn-flip" title="Flip Board Side">🔄 Flip</button>
+                    <button class="btn btn-secondary" id="btn-undo" title="Undo Move">⬅️ Undo</button>
+                    <button class="btn btn-secondary" id="btn-reset" title="Reset Game">🔄 Reset</button>
+                    <button class="btn btn-primary" id="btn-bot-move" title="Stockfish Play Move">🤖 Bot Move</button>
+                </div>
+            </section>
+
+            <!-- Right Workspace: Sidebar Panels & AI Mentor -->
+            <section class="sidebar-section">
+                <!-- Navigation Tabs -->
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="tab-analysis">📊 Analysis & Game</button>
+                    <button class="tab-btn" data-tab="tab-mentor">🎓 AI Mentor (NotebookLM)</button>
+                    <button class="tab-btn" data-tab="tab-settings">⚙️ Settings</button>
+                </div>
+
+                <!-- Tab 1: Analysis & Game -->
+                <div class="tab-content active" id="tab-analysis">
+                    <!-- Opening & Status Card -->
+                    <div class="info-card">
+                        <div class="card-header">
+                            <span class="opening-title" id="opening-name">Starting Position</span>
+                            <span class="turn-badge white" id="turn-badge">White to move</span>
+                        </div>
+                        <div class="eval-summary-grid">
+                            <div class="summary-item">
+                                <span class="label">Stockfish Score</span>
+                                <span class="val highlight" id="summary-eval">+0.0</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="label">Best Recommendation</span>
+                                <span class="val" id="summary-best-move">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Top Candidate Engine Lines -->
+                    <div class="info-card">
+                        <div class="card-title">Top Engine Candidate Lines</div>
+                        <ul class="engine-lines-list" id="engine-lines-list">
+                            <li class="empty-line">Analyzing position...</li>
+                        </ul>
+                    </div>
+
+                    <!-- Move History PGN Table -->
+                    <div class="info-card flex-grow">
+                        <div class="card-title">Move History</div>
+                        <div class="move-history-container" id="move-history-container">
+                            <table class="move-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>White</th>
+                                        <th>Black</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="move-history-tbody">
+                                    <!-- Moves populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: AI Mentor (NotebookLM) -->
+                <div class="tab-content" id="tab-mentor">
+                    <!-- Mentor Action Controls -->
+                    <div class="info-card">
+                        <div class="card-title">Quick Tutor Insights</div>
+                        <div class="mentor-quick-btns">
+                            <button class="quick-btn" id="btn-explain-pos">💡 Explain Position</button>
+                            <button class="quick-btn" id="btn-why-best">🎯 Why Best Move?</button>
+                            <button class="quick-btn" id="btn-strategic-plan">🗺️ Strategic Goals</button>
+                            <button class="quick-btn" id="btn-blunder-check">🛡️ Blunder Check</button>
+                        </div>
+
+                        <!-- Translation Mode Switcher -->
+                        <div class="mode-switcher-container">
+                            <span class="mode-label">Translator Mode:</span>
+                            <label class="toggle-option">
+                                <input type="radio" name="translator-mode" value="human" checked>
+                                <span>Deterministic (Humanized)</span>
+                            </label>
+                            <label class="toggle-option">
+                                <input type="radio" name="translator-mode" value="raw_fen">
+                                <span>Raw FEN Mode</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Custom Question Input Box -->
+                    <div class="info-card">
+                        <div class="card-title">Ask your AI Mentor</div>
+                        <div class="custom-query-box">
+                            <textarea id="mentor-custom-question" placeholder="e.g. What are Black's main strategic plans in this pawn structure? Why is my knight on f3 key?"></textarea>
+                            <button class="btn btn-accent" id="btn-ask-mentor">🚀 Send Query to NotebookLM</button>
+                        </div>
+                    </div>
+
+                    <!-- Mentor Explanation Output Container -->
+                    <div class="info-card flex-grow">
+                        <div class="mentor-output-header">
+                            <span class="card-title">Mentor Explanation</span>
+                            <span class="provider-badge" id="mentor-provider-badge">NotebookLM / Local</span>
+                        </div>
+                        <div class="mentor-response-area" id="mentor-response-area">
+                            <p class="placeholder-text">Click an insight button or ask a question to receive deep strategic advice from your uploaded chess books notebook.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Settings -->
+                <div class="tab-content" id="tab-settings">
+                    <div class="info-card">
+                        <div class="card-title">NotebookLM Connection</div>
+                        <div class="form-group">
+                            <label for="setting-notebook-id">Google NotebookLM Notebook ID</label>
+                            <input type="text" id="setting-notebook-id" placeholder="e.g. 1a2b3c4d-5e6f-7g8h...">
+                            <small>Find your Notebook ID in the NotebookLM browser URL after opening your chess book notebook.</small>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="card-title">Stockfish Engine Path</div>
+                        <div class="form-group">
+                            <label for="setting-stockfish-path">Local Executable Path (Optional)</label>
+                            <input type="text" id="setting-stockfish-path" placeholder="e.g. C:\stockfish\stockfish.exe">
+                            <small>If left blank, the application will use Lichess Cloud Analysis API automatically.</small>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="btn-save-settings">💾 Save Configuration</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
