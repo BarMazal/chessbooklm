@@ -232,6 +232,17 @@ class MentorService:
         """
         target_notebook = notebook_id or self.notebook_id
 
+        # Auto-select notebook if not set
+        if not target_notebook:
+            notebooks = await self.list_notebooks()
+            if notebooks:
+                chess_nb = next((n for n in notebooks if "chess" in n.get("title", "").lower()), None)
+                if chess_nb:
+                    target_notebook = chess_nb["id"]
+                else:
+                    target_notebook = notebooks[0]["id"]
+                self.notebook_id = target_notebook
+
         if target_notebook:
             res = await self._query_notebooklm_py(prompt, target_notebook)
             if res.get("success"):
@@ -250,10 +261,11 @@ class MentorService:
 
     async def _query_notebooklm_py(self, prompt: str, notebook_id: str) -> Dict[str, Any]:
         """
-        Queries NotebookLM notebook via CLI ask subcommand.
+        Queries NotebookLM notebook via CLI ask subcommand with --json to retrieve grounded AI answer.
         """
         try:
-            cmd = self._build_cmd("ask", "-n", notebook_id, prompt)
+            cmd = self._build_cmd("ask", "-n", notebook_id, "--json", prompt)
+            print(f"[MentorService] Running ask command: {' '.join(cmd)}")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -261,11 +273,31 @@ class MentorService:
             )
             stdout, stderr = await process.communicate()
             if process.returncode == 0 and stdout:
-                output_text = stdout.decode("utf-8", errors="ignore").strip()
-                return {"success": True, "text": output_text}
+                raw_out = stdout.decode("utf-8", errors="ignore").strip()
+                try:
+                    data = json.loads(raw_out)
+                    if isinstance(data, dict) and "answer" in data:
+                        answer_text = data["answer"]
+                        # Format references if present
+                        refs = data.get("references", [])
+                        if refs:
+                            citations = []
+                            for r in refs:
+                                c_num = r.get("citation_number")
+                                c_text = r.get("cited_text", "").strip()
+                                if c_num and c_text:
+                                    citations.append(f"> **[{c_num}]** {c_text}")
+                            if citations:
+                                answer_text += "\n\n### 📖 Book Sources & Citations:\n" + "\n\n".join(citations)
+                        return {"success": True, "text": answer_text}
+                    elif isinstance(data, str):
+                        return {"success": True, "text": data}
+                except Exception as parse_err:
+                    print(f"[MentorService] Failed to parse JSON response: {parse_err}")
+                    return {"success": True, "text": raw_out}
             else:
                 err_msg = stderr.decode("utf-8", errors="ignore").strip() if stderr else "Unknown error"
-                print(f"[MentorService] notebooklm ask failed: {err_msg}")
+                print(f"[MentorService] notebooklm ask failed (code {process.returncode}): {err_msg}")
         except Exception as e:
             print(f"[MentorService] notebooklm ask exception: {e}")
 

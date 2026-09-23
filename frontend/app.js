@@ -382,7 +382,11 @@ async function loadNotebooksList() {
             mentorNotebookSelectEl.appendChild(opt);
         });
 
-        document.getElementById('setting-notebook-id').value = currentNotebookId;
+        if (!currentNotebookId && mentorNotebookSelectEl.value) {
+            currentNotebookId = mentorNotebookSelectEl.value;
+        }
+
+        document.getElementById('setting-notebook-id').value = currentNotebookId || "";
 
     } catch (e) {
         mentorNotebookSelectEl.innerHTML = '<option value="">Error loading notebooks</option>';
