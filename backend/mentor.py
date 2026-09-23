@@ -72,19 +72,16 @@ class MentorService:
 
     async def trigger_login(self, email: Optional[str] = None, fresh: bool = True, profile_name: Optional[str] = None) -> Dict[str, Any]:
         """
-        Spawns notebooklm login command in background using project profile.
+        Spawns notebooklm login command in background using isolated project profile.
         Setting fresh=True forces a clean session so Google prompts for User Email & Password.
         """
         try:
             target_profile = profile_name or self.active_profile
             cmd = [self._get_notebooklm_cmd(), "--profile", target_profile, "login"]
 
-            # Force fresh session to prompt for email/password instead of reusing Chrome default profile
+            # Force fresh session to prompt for email/password instead of reusing default profile
             if fresh:
                 cmd.append("--fresh")
-
-            if email:
-                cmd.extend(["--account", email])
 
             print(f"[MentorService] Executing login command: {' '.join(cmd)}")
             subprocess.Popen(cmd)
