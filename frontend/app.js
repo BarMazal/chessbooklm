@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // NotebookLM Account & Select controls
     mentorNotebookSelectEl.addEventListener('change', handleSelectNotebook);
     document.getElementById('btn-refresh-notebooks').addEventListener('click', loadNotebooksList);
-    document.getElementById('btn-login-notebooklm').addEventListener('click', handleLoginNotebookLM);
+    document.getElementById('btn-login-fresh').addEventListener('click', handleLoginFresh);
     document.getElementById('btn-logout-notebooklm').addEventListener('click', handleLogoutNotebookLM);
     document.getElementById('btn-import-cookies').addEventListener('click', openCookiesModal);
 
@@ -410,14 +410,22 @@ async function handleSelectNotebook() {
     }
 }
 
-async function handleLoginNotebookLM() {
+async function handleLoginFresh() {
+    const emailVal = document.getElementById('login-email-input').value.trim();
     try {
-        const resp = await fetch('/api/auth/login', { method: 'POST' });
+        const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                email: emailVal || null,
+                fresh: true
+            })
+        });
         const data = await resp.json();
-        alert(data.message || 'Login process launched!');
-        setTimeout(checkAppStatus, 3000);
+        alert(data.message || 'Fresh login browser process launched! Please sign in with your Google Email & Password in the browser window.');
+        setTimeout(checkAppStatus, 4000);
     } catch (e) {
-        alert('Failed to trigger login: ' + e.message);
+        alert('Failed to trigger fresh login: ' + e.message);
     }
 }
 

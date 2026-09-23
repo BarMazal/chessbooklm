@@ -125,9 +125,13 @@
                             <span class="account-auth-tag red" id="account-auth-tag">Not Logged In</span>
                         </div>
                         
-                        <!-- Account Action Buttons -->
+                        <!-- Account Email & Fresh Login Box -->
+                        <div class="fresh-login-box">
+                            <input type="email" id="login-email-input" class="account-email-input" placeholder="Google Account Email (forces login screen)...">
+                            <button class="btn btn-sm btn-primary" id="btn-login-fresh" title="Forces a fresh browser login asking for Google Email & Password">🔑 Fresh Login</button>
+                        </div>
+
                         <div class="account-action-btns">
-                            <button class="btn btn-sm btn-primary" id="btn-login-notebooklm" title="Open Google Sign-In Browser">🌐 Login Browser</button>
                             <button class="btn btn-sm btn-secondary" id="btn-import-cookies" title="Import Cookies JSON">📋 Import Cookies</button>
                             <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm" title="Logout current Google Account">🚪 Logout</button>
                         </div>

@@ -9,13 +9,14 @@ from backend.config import NOTEBOOKLM_NOTEBOOK_ID, NOTEBOOKLM_AUTH_TOKEN
 class MentorService:
     """
     Pluggable AI Chess Mentor Service.
-    Queries NotebookLM via notebooklm-py, handles account auth (login/logout/cookies),
-    lists notebooks, and updates active mentor context.
+    Queries NotebookLM via notebooklm-py, handles account authentication (fresh login, profile switching, cookies),
+    lists user notebooks, and updates active mentor context.
     """
 
     def __init__(self, notebook_id: str = "", auth_token: str = ""):
         self.notebook_id = notebook_id or NOTEBOOKLM_NOTEBOOK_ID
         self.auth_token = auth_token or NOTEBOOKLM_AUTH_TOKEN
+        self.active_profile = "default"
 
     def _get_notebooklm_cmd(self) -> str:
         venv_cmd = os.path.join(os.getcwd(), "venv", "Scripts", "notebooklm.exe")
@@ -26,12 +27,19 @@ class MentorService:
             return venv_cmd_posix
         return "notebooklm"
 
+    def _build_cmd(self, *args) -> List[str]:
+        cmd = [self._get_notebooklm_cmd()]
+        if self.active_profile and self.active_profile != "default":
+            cmd.extend(["--profile", self.active_profile])
+        cmd.extend(args)
+        return cmd
+
     async def get_auth_status(self) -> Dict[str, Any]:
         """
         Checks authentication status using `notebooklm doctor --json`.
         """
         try:
-            cmd = [self._get_notebooklm_cmd(), "doctor", "--json"]
+            cmd = self._build_cmd("doctor", "--json")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -44,7 +52,7 @@ class MentorService:
                 auth_detail = data.get("checks", {}).get("auth", {}).get("detail", "")
                 return {
                     "is_logged_in": auth_pass,
-                    "profile": data.get("profile", "default"),
+                    "profile": data.get("profile", self.active_profile),
                     "detail": auth_detail,
                     "active_notebook_id": self.notebook_id
                 }
@@ -53,34 +61,105 @@ class MentorService:
 
         return {
             "is_logged_in": False,
-            "profile": "default",
+            "profile": self.active_profile,
             "detail": "Not authenticated",
             "active_notebook_id": self.notebook_id
         }
 
-    async def trigger_login(self) -> Dict[str, Any]:
+    async def trigger_login(self, email: Optional[str] = None, fresh: bool = True, profile_name: Optional[str] = None) -> Dict[str, Any]:
         """
-        Spawns notebooklm login in background to open browser sign-in window.
+        Spawns notebooklm login command in background.
+        Setting fresh=True forces a clean session so Google prompts for User Email & Password.
         """
         try:
-            cmd = [self._get_notebooklm_cmd(), "login"]
+            cmd = [self._get_notebooklm_cmd()]
+            
+            target_profile = profile_name or self.active_profile
+            if target_profile and target_profile != "default":
+                cmd.extend(["--profile", target_profile])
+                
+            cmd.append("login")
+
+            # Force fresh session to prompt for email/password instead of reusing Chrome default profile
+            if fresh:
+                cmd.append("--fresh")
+
+            if email:
+                cmd.extend(["--account", email])
+
+            print(f"[MentorService] Executing login command: {' '.join(cmd)}")
             subprocess.Popen(cmd)
             return {
                 "success": True,
-                "message": "Login browser window launched. Complete sign-in in your browser, then click Refresh."
+                "message": f"Fresh login browser window launched for account profile '{target_profile}'. Please enter your Google Email & Password in the browser window.",
+                "profile": target_profile
             }
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Failed to launch browser login: {str(e)}"
+                "message": f"Failed to launch fresh browser login: {str(e)}"
+            }
+
+    async def list_profiles(self) -> List[Dict[str, Any]]:
+        """
+        Lists all available notebooklm account profiles.
+        """
+        try:
+            cmd = [self._get_notebooklm_cmd(), "profile", "list"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, _ = await process.communicate()
+            if stdout:
+                lines = stdout.decode("utf-8", errors="ignore").splitlines()
+                profiles = []
+                for l in lines:
+                    line_clean = l.strip()
+                    if line_clean and not line_clean.startswith("─") and not line_clean.startswith("┌") and "Profile" not in line_clean:
+                        parts = [p.strip() for p in line_clean.split("│") if p.strip()]
+                        if parts:
+                            p_name = parts[0].replace("*", "").strip()
+                            profiles.append({"name": p_name, "is_active": p_name == self.active_profile})
+                if not profiles:
+                    profiles = [{"name": "default", "is_active": True}]
+                return profiles
+        except Exception as e:
+            print(f"[MentorService] Profile list error: {e}")
+
+        return [{"name": "default", "is_active": True}]
+
+    async def switch_profile(self, profile_name: str) -> Dict[str, Any]:
+        """
+        Switches active notebooklm profile.
+        """
+        try:
+            cmd = [self._get_notebooklm_cmd(), "profile", "switch", profile_name]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            await process.communicate()
+            self.active_profile = profile_name
+            return {
+                "success": True,
+                "message": f"Switched to profile '{profile_name}'.",
+                "profile": profile_name
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to switch profile: {str(e)}"
             }
 
     async def logout(self) -> Dict[str, Any]:
         """
-        Logs out of the current Google account by clearing stored credentials.
+        Logs out of the current Google account profile by clearing stored credentials.
         """
         try:
-            cmd = [self._get_notebooklm_cmd(), "auth", "logout"]
+            cmd = self._build_cmd("auth", "logout")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -102,14 +181,13 @@ class MentorService:
         Imports authentication cookies from JSON content.
         """
         try:
-            # Validate JSON format
             cookies_data = json.loads(cookies_json_str)
             
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as tf:
                 json.dump(cookies_data, tf)
                 temp_path = tf.name
 
-            cmd = [self._get_notebooklm_cmd(), "auth", "import-cookies", temp_path]
+            cmd = self._build_cmd("auth", "import-cookies", temp_path)
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -134,10 +212,10 @@ class MentorService:
 
     async def list_notebooks(self) -> List[Dict[str, Any]]:
         """
-        Lists all available NotebookLM notebooks for the logged-in user.
+        Lists all available NotebookLM notebooks for the logged-in user profile.
         """
         try:
-            cmd = [self._get_notebooklm_cmd(), "list", "--json"]
+            cmd = self._build_cmd("list", "--json")
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -192,7 +270,7 @@ class MentorService:
         Queries NotebookLM notebook via CLI ask subcommand.
         """
         try:
-            cmd = [self._get_notebooklm_cmd(), "ask", "--notebook-id", notebook_id, prompt]
+            cmd = self._build_cmd("ask", "--notebook-id", notebook_id, prompt)
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
@@ -231,5 +309,5 @@ In this game phase, key focus areas include controlling the central squares (d4,
 *   **Pawn Structure:** Maintain central presence or establish pawn chains that support piece outposts.
 *   **Piece Coordination:** Bring Rooks to open or semi-open files, castle early, and avoid leaving pieces un-defended (LPDO - Loose Pieces Drop Off).
 
-*(Tip: Click 'Account & Notebooks' in the toolbar to log in and pick your NotebookLM chess books notebook!)*
+*(Tip: Log in with your target Google account in the top panel to load your chess books notebook!)*
 """

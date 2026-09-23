@@ -49,6 +49,16 @@ class SelectNotebookRequest(BaseModel):
     notebook_id: str
 
 
+class LoginRequest(BaseModel):
+    email: Optional[str] = None
+    fresh: Optional[bool] = True
+    profile_name: Optional[str] = None
+
+
+class SwitchProfileRequest(BaseModel):
+    profile_name: str
+
+
 class ImportCookiesRequest(BaseModel):
     cookies_json: str
 
@@ -85,11 +95,32 @@ async def get_auth_status():
 
 
 @app.post("/api/auth/login")
-async def trigger_login():
+async def trigger_login(req: Optional[LoginRequest] = None):
     """
     Triggers notebooklm login process in browser.
+    Setting fresh=True forces a clean session so Google prompts for User Email & Password.
     """
-    return await mentor_service.trigger_login()
+    email = req.email if req else None
+    fresh = req.fresh if req else True
+    profile_name = req.profile_name if req else None
+    return await mentor_service.trigger_login(email=email, fresh=fresh, profile_name=profile_name)
+
+
+@app.get("/api/auth/profiles")
+async def list_profiles():
+    """
+    Lists all stored notebooklm account profiles.
+    """
+    profiles = await mentor_service.list_profiles()
+    return {"profiles": profiles, "active_profile": mentor_service.active_profile}
+
+
+@app.post("/api/auth/profiles/switch")
+async def switch_profile(req: SwitchProfileRequest):
+    """
+    Switches active notebooklm profile.
+    """
+    return await mentor_service.switch_profile(req.profile_name)
 
 
 @app.post("/api/auth/logout")
@@ -111,7 +142,7 @@ async def import_cookies(req: ImportCookiesRequest):
 @app.get("/api/notebooks")
 async def get_notebooks():
     """
-    Returns list of all available NotebookLM notebooks for the user.
+    Returns list of all available NotebookLM notebooks for the active account profile.
     """
     notebooks = await mentor_service.list_notebooks()
     return {

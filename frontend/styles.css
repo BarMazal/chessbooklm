@@ -342,6 +342,21 @@ body {
 .account-auth-tag.green { background-color: rgba(129, 182, 76, 0.2); color: #81b64c; border: 1px solid #81b64c; }
 .account-auth-tag.red { background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border: 1px solid #e74c3c; }
 
+.fresh-login-box {
+    display: flex;
+    gap: 6px;
+}
+
+.account-email-input {
+    flex: 1;
+    background-color: #161512;
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text-heading);
+    font-size: 11px;
+}
+
 .account-action-btns {
     display: flex;
     gap: 6px;
