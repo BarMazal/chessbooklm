@@ -253,7 +253,7 @@ class MentorService:
         Queries NotebookLM notebook via CLI ask subcommand.
         """
         try:
-            cmd = self._build_cmd("ask", "--notebook-id", notebook_id, prompt)
+            cmd = self._build_cmd("ask", "-n", notebook_id, prompt)
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,
