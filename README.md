@@ -28,32 +28,71 @@ An interactive web-based chess application featuring real-time Stockfish engine 
 
 ## 🚀 Quick Setup & Installation
 
-### Windows (PowerShell)
+### 1. Run Setup Script
+**Windows (PowerShell)**:
 ```powershell
-# 1. Run setup script (creates venv & installs dependencies)
 .\setup.ps1
-
-# 2. Run application
-.\run.ps1
 ```
 
-### Linux / macOS (Bash)
+**Linux / macOS (Bash)**:
 ```bash
-# 1. Run setup script
 chmod +x setup.sh run.sh
 ./setup.sh
-
-# 2. Run application
-./run.sh
 ```
 
 ---
 
-## ⚙️ Configuration
+## 🔐 Google NotebookLM Login & Setup
 
-Open `http://127.0.0.1:8080` in your browser. Navigate to the **Settings** tab in the right panel to:
-- Enter your **Google NotebookLM Notebook ID**.
-- Optionally set a custom path to a local Stockfish binary.
+To connect your custom uploaded chess books in NotebookLM to the application:
+
+### Step 1: Authenticate with NotebookLM
+Run the login command from your virtual environment:
+
+**Windows**:
+```powershell
+.\venv\Scripts\notebooklm.exe login
+```
+
+**Linux / macOS**:
+```bash
+./venv/bin/notebooklm login
+```
+*This opens a browser window where you can sign in to your Google account.*
+
+### Step 2: Get your Notebook ID
+1. Open [https://notebooklm.google.com](https://notebooklm.google.com) in your browser.
+2. Select your notebook containing your uploaded chess PDFs & books.
+3. Look at your browser address bar and copy the ID at the end of the URL:
+   `https://notebooklm.google.com/notebook/<YOUR_NOTEBOOK_ID>`
+
+Alternatively, you can list your notebooks from the command line:
+```powershell
+.\venv\Scripts\notebooklm.exe list
+```
+
+### Step 3: Enter your Notebook ID in the App
+- Paste your Notebook ID into `.env`:
+  ```env
+  NOTEBOOKLM_NOTEBOOK_ID=your-notebook-id-here
+  ```
+- Or enter it directly in the App UI under the **Settings** tab!
+
+---
+
+## 🏃 Launching the Application
+
+**Windows**:
+```powershell
+.\run.ps1
+```
+
+**Linux / macOS**:
+```bash
+./run.sh
+```
+
+Open `http://127.0.0.1:8080` in your browser.
 
 ---
 
@@ -72,6 +111,6 @@ chessbooklm/
 │   ├── styles.css            # Chessboard & dashboard styles
 │   └── app.js                # Board rendering, move stack, & SVG arrows
 ├── requirements.txt          # Python dependencies
-├── setup.ps1 / setup.sh      # One-click installation scripts
+├── setup.ps1 / setup.sh      # One-click installation & setup scripts
 └── run.ps1 / run.sh          # Server launcher scripts
 ```

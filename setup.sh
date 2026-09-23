@@ -23,12 +23,34 @@ fi
 echo "[+] Installing dependencies into venv..."
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt
+./venv/bin/pip install "notebooklm-py[browser]"
 
 # Create .env if missing
 if [ ! -f ".env" ]; then
     echo "[+] Creating .env from .env.example..."
     cp .env.example .env
 fi
+
+echo ""
+echo "=================================================="
+echo " 🔐 Google NotebookLM Authentication Guide"
+echo "=================================================="
+echo "To link your chess books notebook from NotebookLM:"
+echo ""
+echo " Step 1: Log in to Google NotebookLM CLI"
+echo "   Run:"
+echo "     ./venv/bin/notebooklm login"
+echo "   (This opens a browser window to sign in to your Google account)"
+echo ""
+echo " Step 2: Get your Notebook ID"
+echo "   1. Open https://notebooklm.google.com"
+echo "   2. Open your chess books notebook."
+echo "   3. Copy the ID from the URL:"
+echo "      https://notebooklm.google.com/notebook/<YOUR_NOTEBOOK_ID>"
+echo ""
+echo " Step 3: Configure Notebook ID"
+echo "   Paste your Notebook ID in '.env' or inside the App UI under Settings."
+echo "=================================================="
 
 echo ""
 echo "=================================================="
