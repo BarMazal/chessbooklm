@@ -411,18 +411,16 @@ async function handleSelectNotebook() {
 }
 
 async function handleLoginFresh() {
-    const emailVal = document.getElementById('login-email-input').value.trim();
     try {
         const resp = await fetch('/api/auth/login', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                email: emailVal || null,
                 fresh: true
             })
         });
         const data = await resp.json();
-        alert(data.message || 'Fresh login browser process launched! Please sign in with your Google Email & Password in the browser window.');
+        alert('🌐 Fresh Google Sign-In Window Launched!\n\nSteps to log in:\n1. Enter your Google Email in the browser window and click Next.\n2. Enter your Google Password on the next screen.\n3. Once signed in, return here and click 🔄 Refresh to load your notebooks!');
         setTimeout(checkAppStatus, 4000);
     } catch (e) {
         alert('Failed to trigger fresh login: ' + e.message);
