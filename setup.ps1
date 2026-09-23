@@ -26,10 +26,10 @@ if (-not (Test-Path "venv")) {
 Write-Host "[+] Installing dependencies into venv..." -ForegroundColor Yellow
 .\venv\Scripts\python.exe -m pip install --upgrade pip
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe -m pip install "notebooklm-py[browser]"
+.\venv\Scripts\python.exe -m playwright install chromium
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "[✓] Core dependencies installed successfully." -ForegroundColor Green
+    Write-Host "[✓] Core dependencies and Playwright browser installed successfully." -ForegroundColor Green
 } else {
     Write-Host "[!] Failed to install dependencies." -ForegroundColor Red
     Exit 1

@@ -23,7 +23,7 @@ fi
 echo "[+] Installing dependencies into venv..."
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt
-./venv/bin/pip install "notebooklm-py[browser]"
+./venv/bin/python -m playwright install chromium
 
 # Create .env if missing
 if [ ! -f ".env" ]; then
