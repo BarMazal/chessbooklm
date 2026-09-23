@@ -49,10 +49,10 @@ Write-Host " 🔐 Google NotebookLM Authentication Guide" -ForegroundColor Magen
 Write-Host "==================================================" -ForegroundColor Magenta
 Write-Host "To link your chess books notebook from NotebookLM:" -ForegroundColor White
 Write-Host ""
-Write-Host " Step 1: Log in to Google NotebookLM CLI" -ForegroundColor Yellow
+Write-Host " Step 1: Log in to Google NotebookLM CLI (Isolated Profile 'chessbooklm')" -ForegroundColor Yellow
 Write-Host "   Run the following command in your terminal:" -ForegroundColor LightGray
-Write-Host "     .\venv\Scripts\notebooklm.exe login" -ForegroundColor Cyan
-Write-Host "   (This opens a browser window to sign in to your Google account)" -ForegroundColor Gray
+Write-Host "     .\venv\Scripts\notebooklm.exe --profile chessbooklm login --fresh" -ForegroundColor Cyan
+Write-Host "   (This opens a fresh browser window to sign in to your Google account)" -ForegroundColor Gray
 Write-Host ""
 Write-Host " Step 2: Get your Notebook ID" -ForegroundColor Yellow
 Write-Host "   1. Open https://notebooklm.google.com" -ForegroundColor LightGray
@@ -61,7 +61,7 @@ Write-Host "   3. Copy the ID from the URL:" -ForegroundColor LightGray
 Write-Host "      https://notebooklm.google.com/notebook/<YOUR_NOTEBOOK_ID>" -ForegroundColor Cyan
 Write-Host ""
 Write-Host " Step 3: Configure Notebook ID" -ForegroundColor Yellow
-Write-Host "   Paste your Notebook ID in '.env' or inside the App UI under Settings." -ForegroundColor LightGray
+Write-Host "   Paste your Notebook ID in '.env' or select it in the App UI under AI Mentor tab." -ForegroundColor LightGray
 Write-Host "==================================================" -ForegroundColor Magenta
 
 Write-Host ""
