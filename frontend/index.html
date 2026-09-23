@@ -61,6 +61,9 @@
 
             <!-- Right Workspace: Sidebar Panels & AI Mentor -->
             <section class="sidebar-section">
+                <!-- Draggable Horizontal Resizer -->
+                <div class="sidebar-resizer" id="sidebar-resizer" title="Drag left/right to resize sidebar width"></div>
+
                 <!-- Navigation Tabs -->
                 <div class="sidebar-tabs">
                     <button class="tab-btn active" data-tab="tab-analysis">📊 Analysis & Game</button>
@@ -118,38 +121,45 @@
 
                 <!-- Tab 2: AI Mentor (NotebookLM) -->
                 <div class="tab-content" id="tab-mentor">
-                    <!-- Account & NotebookLM Login / Selector Card -->
-                    <div class="info-card">
-                        <div class="card-header">
-                            <span class="card-title">🔐 Account & NotebookLM Mentor</span>
+                    <!-- Account & NotebookLM Login / Selector Card (Collapsible) -->
+                    <div class="info-card account-card" id="account-card">
+                        <div class="card-header clickable" id="account-card-header" title="Click to collapse / expand account settings">
+                            <div class="header-title-group">
+                                <button class="collapse-btn" id="btn-toggle-account" title="Minimize/Expand Account Settings">▼</button>
+                                <span class="card-title">🔐 Account & NotebookLM</span>
+                            </div>
                             <span class="account-auth-tag red" id="account-auth-tag">Not Logged In</span>
                         </div>
                         
-                        <!-- Account Action Buttons -->
-                        <div class="account-action-btns">
-                            <button class="btn btn-sm btn-primary" id="btn-login-fresh" title="Opens fresh browser sign-in for Google Email & Password">🔑 Sign In to Google</button>
-                            <button class="btn btn-sm btn-secondary" id="btn-import-cookies" title="Import Session Cookies JSON">📋 Import Cookies</button>
-                            <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm" title="Logout current Google Account">🚪 Logout</button>
-                        </div>
+                        <div class="account-card-body" id="account-card-body">
+                            <!-- Account Action Buttons -->
+                            <div class="account-action-btns">
+                                <button class="btn btn-sm btn-primary" id="btn-login-fresh" title="Opens fresh browser sign-in for Google Email & Password">🔑 Sign In to Google</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-import-cookies" title="Import Session Cookies JSON">📋 Import Cookies</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm" title="Logout current Google Account">🚪 Logout</button>
+                            </div>
 
-                        <!-- Notebook Selector Row -->
-                        <div class="notebook-select-header">
-                            <span class="mode-label">Select Mentor Notebook:</span>
-                            <button class="btn btn-sm btn-secondary" id="btn-refresh-notebooks" title="Refresh Notebooks List">🔄 Refresh</button>
+                            <!-- Notebook Selector Row -->
+                            <div class="notebook-select-header">
+                                <span class="mode-label">Select Mentor Notebook:</span>
+                                <button class="btn btn-sm btn-secondary" id="btn-refresh-notebooks" title="Refresh Notebooks List">🔄 Refresh</button>
+                            </div>
+                            <select id="mentor-notebook-select" class="notebook-select">
+                                <option value="">Loading notebooks...</option>
+                            </select>
                         </div>
-                        <select id="mentor-notebook-select" class="notebook-select">
-                            <option value="">Loading notebooks...</option>
-                        </select>
                     </div>
 
-                    <!-- Mentor Action Controls -->
-                    <div class="info-card">
-                        <div class="card-title">Quick Tutor Insights</div>
-                        <div class="mentor-quick-btns">
-                            <button class="quick-btn" id="btn-explain-pos">💡 Explain Position</button>
-                            <button class="quick-btn" id="btn-why-best">🎯 Why Best Move?</button>
-                            <button class="quick-btn" id="btn-strategic-plan">🗺️ Strategic Goals</button>
-                            <button class="quick-btn" id="btn-blunder-check">🛡️ Blunder Check</button>
+                    <!-- Custom Question Input Box with Quick Tutor Insights Header Chips -->
+                    <div class="info-card mentor-card-50" id="card-ask-mentor">
+                        <div class="card-header-bar">
+                            <span class="card-title">Ask your AI Mentor</span>
+                            <div class="quick-chip-container">
+                                <button class="quick-chip" id="btn-explain-pos" title="Paste 'Explain Position' prompt into textarea">💡 Explain</button>
+                                <button class="quick-chip" id="btn-why-best" title="Paste 'Why Best Move?' prompt into textarea">🎯 Why Best?</button>
+                                <button class="quick-chip" id="btn-strategic-plan" title="Paste 'Strategic Goals' prompt into textarea">🗺️ Goals</button>
+                                <button class="quick-chip" id="btn-blunder-check" title="Paste 'Blunder Check' prompt into textarea">🛡️ Blunder</button>
+                            </div>
                         </div>
 
                         <!-- Translation Mode Switcher -->
@@ -164,25 +174,21 @@
                                 <span>Raw FEN Mode</span>
                             </label>
                         </div>
-                    </div>
 
-                    <!-- Custom Question Input Box -->
-                    <div class="info-card">
-                        <div class="card-title">Ask your AI Mentor</div>
                         <div class="custom-query-box">
-                            <textarea id="mentor-custom-question" placeholder="e.g. What are Black's main strategic plans in this pawn structure? Why is my knight on f3 key?"></textarea>
+                            <textarea id="mentor-custom-question" placeholder="e.g. What are Black's main strategic plans in this pawn structure? Why is my knight on f3 key? (Click prompt chips above to paste)"></textarea>
                             <button class="btn btn-accent" id="btn-ask-mentor">🚀 Send Query to NotebookLM</button>
                         </div>
                     </div>
 
                     <!-- Mentor Explanation Output Container -->
-                    <div class="info-card flex-grow">
+                    <div class="info-card mentor-card-50 flex-grow" id="card-mentor-output">
                         <div class="mentor-output-header">
                             <span class="card-title">Mentor Explanation</span>
                             <span class="provider-badge" id="mentor-provider-badge">NotebookLM / Local</span>
                         </div>
                         <div class="mentor-response-area" id="mentor-response-area">
-                            <p class="placeholder-text">Click an insight button or ask a question to receive deep strategic advice from your uploaded chess books notebook.</p>
+                            <p class="placeholder-text">Click a quick prompt chip or type a question to receive deep strategic advice from your uploaded chess books notebook.</p>
                         </div>
                     </div>
                 </div>

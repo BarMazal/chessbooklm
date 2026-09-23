@@ -60,12 +60,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-reset').addEventListener('click', resetBoard);
     document.getElementById('btn-bot-move').addEventListener('click', makeBotMove);
 
-    // Mentor quick buttons
-    document.getElementById('btn-explain-pos').addEventListener('click', () => requestMentorInsight("Explain the overall strategic theme, pawn structures, and piece activity for both sides in this position."));
-    document.getElementById('btn-why-best').addEventListener('click', () => requestMentorInsight("Why does the engine recommend this specific move? What tactical or positional idea is behind it?"));
-    document.getElementById('btn-strategic-plan').addEventListener('click', () => requestMentorInsight("What are Black and White's long term strategic goals, pawn breaks, and attack plans from our chess books?"));
-    document.getElementById('btn-blunder-check').addEventListener('click', () => requestMentorInsight("Check if there are any immediate tactical blunders, undefended pieces, or king safety vulnerabilities."));
+    // Mentor quick prompt chip buttons (paste & append to prompt textarea)
+    document.getElementById('btn-explain-pos').addEventListener('click', () => appendPromptTemplate("Explain the overall strategic theme, pawn structures, and piece activity for both sides in this position."));
+    document.getElementById('btn-why-best').addEventListener('click', () => appendPromptTemplate("Why is the top engine move recommended in this position? What tactical or positional ideas support it?"));
+    document.getElementById('btn-strategic-plan').addEventListener('click', () => appendPromptTemplate("What are the long-term strategic plans and key target squares for White and Black in this setup?"));
+    document.getElementById('btn-blunder-check').addEventListener('click', () => appendPromptTemplate("Check for potential blunders, threats, and tactics. What forcing moves should I watch out for?"));
     document.getElementById('btn-ask-mentor').addEventListener('click', handleCustomMentorQuery);
+
+    initAccountCardToggle();
+    initSidebarResizer();
 
     // NotebookLM Account & Select controls
     mentorNotebookSelectEl.addEventListener('change', handleSelectNotebook);
@@ -574,4 +577,62 @@ async function saveSettings() {
     } catch (e) {
         alert('Failed to save settings: ' + e.message);
     }
+}
+
+function appendPromptTemplate(templateText) {
+    const qEl = document.getElementById('mentor-custom-question');
+    if (!qEl) return;
+    const curVal = qEl.value.trim();
+    if (!curVal) {
+        qEl.value = templateText;
+    } else {
+        qEl.value = curVal + "\n\n" + templateText;
+    }
+    qEl.focus();
+}
+
+function initAccountCardToggle() {
+    const card = document.getElementById('account-card');
+    const header = document.getElementById('account-card-header');
+    if (!card || !header) return;
+
+    header.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON' && e.target.id !== 'btn-toggle-account') return;
+        card.classList.toggle('collapsed');
+    });
+}
+
+function initSidebarResizer() {
+    const resizer = document.getElementById('sidebar-resizer');
+    const sidebar = document.querySelector('.sidebar-section');
+    if (!resizer || !sidebar) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startWidth = sidebar.offsetWidth;
+        resizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const deltaX = startX - e.clientX;
+        const newWidth = Math.max(320, Math.min(window.innerWidth * 0.75, startWidth + deltaX));
+        sidebar.style.width = `${newWidth}px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
 }

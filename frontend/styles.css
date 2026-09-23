@@ -255,12 +255,33 @@ body {
 
 /* Sidebar Section (Right) */
 .sidebar-section {
+    position: relative;
     width: 440px;
+    min-width: 320px;
+    max-width: 80vw;
     background-color: #1e1c18;
     border-left: 1px solid var(--card-border);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* Draggable Horizontal Resizer */
+.sidebar-resizer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 100;
+    background-color: transparent;
+    transition: background-color 0.2s ease;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.dragging {
+    background-color: var(--accent-color);
 }
 
 /* Tabs */
@@ -302,6 +323,104 @@ body {
 
 .tab-content.active { display: flex; }
 
+/* AI Mentor Tab Flex Layout */
+#tab-mentor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+}
+
+.account-card {
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.account-card.collapsed {
+    padding: 10px 14px;
+}
+
+.account-card.collapsed .account-card-body {
+    display: none;
+}
+
+.header-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.collapse-btn {
+    background: none;
+    border: none;
+    color: #8b8987;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.collapse-btn:hover {
+    color: var(--text-heading);
+    background-color: #312e2b;
+}
+
+.account-card.collapsed .collapse-btn {
+    transform: rotate(-90deg);
+}
+
+.card-header.clickable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.card-header.clickable:hover .card-title {
+    color: var(--accent-color);
+}
+
+.mentor-card-50 {
+    flex: 1 1 50%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.card-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.quick-chip-container {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.quick-chip {
+    background-color: #1c1a17;
+    border: 1px solid var(--card-border);
+    color: var(--text-heading);
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.quick-chip:hover {
+    border-color: var(--accent-color);
+    background-color: #2b2824;
+    color: var(--accent-color);
+}
+
 /* Info Cards */
 .info-card {
     background-color: var(--card-bg);
@@ -315,7 +434,7 @@ body {
 
 .info-card.flex-grow {
     flex: 1;
-    min-height: 200px;
+    min-height: 180px;
 }
 
 .card-title {
@@ -446,7 +565,6 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-
     font-family: monospace;
 }
 
@@ -486,38 +604,11 @@ body {
 
 .move-table tr:hover { background-color: #1c1a17; }
 
-/* Mentor Tab Buttons */
-.mentor-quick-btns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-}
-
-.quick-btn {
-    background-color: #1c1a17;
-    border: 1px solid var(--card-border);
-    color: var(--text-heading);
-    padding: 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.2s ease;
-}
-
-.quick-btn:hover {
-    border-color: var(--accent-color);
-    background-color: #2b2824;
-}
-
 .mode-switcher-container {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 6px;
-    padding-top: 10px;
-    border-top: 1px solid #312e2b;
+    padding-bottom: 4px;
     font-size: 11px;
 }
 
@@ -533,14 +624,17 @@ body {
 
 /* Custom Query Box */
 .custom-query-box {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-height: 0;
 }
 
 .custom-query-box textarea {
+    flex: 1;
     width: 100%;
-    height: 70px;
+    min-height: 70px;
     background-color: #161512;
     border: 1px solid var(--card-border);
     border-radius: 6px;
@@ -598,6 +692,9 @@ body {
 }
 
 .mentor-response-area {
+    flex: 1;
+    min-height: 0;
+    max-height: 100%;
     background-color: #161512;
     border-radius: 6px;
     padding: 12px;
@@ -605,7 +702,6 @@ body {
     line-height: 1.5;
     color: #dcdbd9;
     overflow-y: auto;
-    max-height: 320px;
 }
 
 .mentor-response-area h3 {
