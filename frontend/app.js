@@ -25,6 +25,7 @@ let legalMoves = [];
 let isFlipped = false;
 let lastMoveSquares = [];
 let bestMoveArrow = null;
+let currentNotebookId = "";
 
 // DOM Elements
 const chessboardEl = document.getElementById('chessboard');
@@ -39,6 +40,9 @@ const engineLinesListEl = document.getElementById('engine-lines-list');
 const moveHistoryTbodyEl = document.getElementById('move-history-tbody');
 const mentorResponseAreaEl = document.getElementById('mentor-response-area');
 const mentorProviderBadgeEl = document.getElementById('mentor-provider-badge');
+const mentorNotebookSelectEl = document.getElementById('mentor-notebook-select');
+const accountAuthTagEl = document.getElementById('account-auth-tag');
+const cookiesModalEl = document.getElementById('cookies-modal');
 
 // Initial Setup
 document.addEventListener('DOMContentLoaded', () => {
@@ -48,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderBoard();
     updatePositionEvaluation();
     checkAppStatus();
+    loadNotebooksList();
 
     // Board controls
     document.getElementById('btn-flip').addEventListener('click', toggleFlip);
@@ -61,6 +66,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-strategic-plan').addEventListener('click', () => requestMentorInsight("What are Black and White's long term strategic goals, pawn breaks, and attack plans from our chess books?"));
     document.getElementById('btn-blunder-check').addEventListener('click', () => requestMentorInsight("Check if there are any immediate tactical blunders, undefended pieces, or king safety vulnerabilities."));
     document.getElementById('btn-ask-mentor').addEventListener('click', handleCustomMentorQuery);
+
+    // NotebookLM Account & Select controls
+    mentorNotebookSelectEl.addEventListener('change', handleSelectNotebook);
+    document.getElementById('btn-refresh-notebooks').addEventListener('click', loadNotebooksList);
+    document.getElementById('btn-login-notebooklm').addEventListener('click', handleLoginNotebookLM);
+    document.getElementById('btn-logout-notebooklm').addEventListener('click', handleLogoutNotebookLM);
+    document.getElementById('btn-import-cookies').addEventListener('click', openCookiesModal);
+
+    // Cookies modal handlers
+    document.getElementById('btn-close-cookies-modal').addEventListener('click', closeCookiesModal);
+    document.getElementById('btn-cancel-cookies').addEventListener('click', closeCookiesModal);
+    document.getElementById('btn-submit-cookies').addEventListener('click', handleSubmitCookies);
 
     // Settings save
     document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
@@ -94,7 +111,6 @@ function initBoard() {
             squareEl.className = `square ${isLight ? 'light' : 'dark'}`;
             squareEl.dataset.square = sqName;
 
-            // Coordinate labels
             if (fIdx === 0) {
                 const rLabel = document.createElement('span');
                 rLabel.className = 'coord-label coord-rank';
@@ -154,21 +170,17 @@ function renderBoard() {
     document.querySelectorAll('.square').forEach(sqEl => {
         const sqName = sqEl.dataset.square;
         
-        // Clear previous piece & highlights
         sqEl.querySelectorAll('.piece-svg, .move-dot').forEach(el => el.remove());
         sqEl.classList.remove('selected', 'highlight-light', 'highlight-dark');
 
-        // Apply highlights for last move
         if (lastMoveSquares.includes(sqName)) {
             sqEl.classList.add(sqEl.classList.contains('light') ? 'highlight-light' : 'highlight-dark');
         }
 
-        // Selected square
         if (selectedSquare === sqName) {
             sqEl.classList.add('selected');
         }
 
-        // Render Legal Move Dots
         const targetMove = legalMoves.find(m => m.uci.startsWith(selectedSquare) && m.uci.slice(2,4) === sqName);
         if (selectedSquare && targetMove) {
             const dotEl = document.createElement('div');
@@ -176,7 +188,6 @@ function renderBoard() {
             sqEl.appendChild(dotEl);
         }
 
-        // Render Piece
         if (boardState[sqName] && PIECE_SVGS[boardState[sqName]]) {
             const wrapper = document.createElement('div');
             wrapper.innerHTML = PIECE_SVGS[boardState[sqName]];
@@ -229,7 +240,6 @@ function handleSquareClick(sqName) {
             return;
         }
 
-        // Check if selected destination is legal move
         const matchMove = legalMoves.find(m => m.uci.startsWith(selectedSquare) && m.uci.slice(2,4) === sqName);
         if (matchMove) {
             executeMove(matchMove.san, matchMove.uci);
@@ -238,7 +248,6 @@ function handleSquareClick(sqName) {
         }
     }
 
-    // Select piece if it belongs to current turn
     const activeColor = currentFen.split(' ')[1];
     if (boardState[sqName] && boardState[sqName].startsWith(activeColor)) {
         selectedSquare = sqName;
@@ -270,7 +279,6 @@ async function updatePositionEvaluation() {
         legalMoves = data.legal_moves || [];
         parseFenToState(currentFen);
 
-        // Update Opening & Summary
         openingNameEl.textContent = data.opening || 'Custom Game';
         const scoreStr = data.eval.score;
         summaryEvalEl.textContent = scoreStr;
@@ -278,18 +286,15 @@ async function updatePositionEvaluation() {
         summaryBestMoveEl.textContent = data.eval.best_move_san || '-';
         bestMoveArrow = data.eval.best_move;
 
-        // Update Vertical Eval Bar Height
         let whitePercentage = 50;
         if (data.eval.eval_type === 'mate') {
             whitePercentage = data.eval.eval_val > 0 ? 98 : 2;
         } else {
             const cp = data.eval.eval_val;
-            // Sigmoid-style conversion for CP to percentage
             whitePercentage = Math.min(98, Math.max(2, 50 + (cp * 10)));
         }
         evalWhiteFillEl.style.height = `${whitePercentage}%`;
 
-        // Update Top Engine Candidate Lines
         engineLinesListEl.innerHTML = '';
         (data.eval.top_moves || []).forEach(m => {
             const li = document.createElement('li');
@@ -297,7 +302,6 @@ async function updatePositionEvaluation() {
             engineLinesListEl.appendChild(li);
         });
 
-        // Update PGN Move History Table
         renderMoveHistoryTable();
         renderBoard();
 
@@ -350,6 +354,121 @@ async function makeBotMove() {
     await executeMove(bestMoveObj.san, bestMoveObj.uci);
 }
 
+async function loadNotebooksList() {
+    mentorNotebookSelectEl.innerHTML = '<option value="">Loading notebooks...</option>';
+    try {
+        const resp = await fetch('/api/notebooks');
+        const data = await resp.json();
+
+        currentNotebookId = data.active_notebook_id || "";
+        mentorNotebookSelectEl.innerHTML = '';
+
+        if (!data.notebooks || data.notebooks.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.textContent = "No notebooks found (Please log in)";
+            mentorNotebookSelectEl.appendChild(opt);
+            return;
+        }
+
+        data.notebooks.forEach(nb => {
+            const opt = document.createElement('option');
+            opt.value = nb.id;
+            opt.textContent = `${nb.title} (${nb.id.slice(0, 8)}...)`;
+            if (nb.id === currentNotebookId || nb.is_active) {
+                opt.selected = true;
+                currentNotebookId = nb.id;
+            }
+            mentorNotebookSelectEl.appendChild(opt);
+        });
+
+        document.getElementById('setting-notebook-id').value = currentNotebookId;
+
+    } catch (e) {
+        mentorNotebookSelectEl.innerHTML = '<option value="">Error loading notebooks</option>';
+        console.error('Failed to load notebooks:', e);
+    }
+}
+
+async function handleSelectNotebook() {
+    const selectedId = mentorNotebookSelectEl.value;
+    if (!selectedId) return;
+
+    try {
+        const resp = await fetch('/api/notebooks/select', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ notebook_id: selectedId })
+        });
+        const data = await resp.json();
+
+        currentNotebookId = selectedId;
+        document.getElementById('setting-notebook-id').value = selectedId;
+        checkAppStatus();
+    } catch (e) {
+        alert('Failed to select notebook: ' + e.message);
+    }
+}
+
+async function handleLoginNotebookLM() {
+    try {
+        const resp = await fetch('/api/auth/login', { method: 'POST' });
+        const data = await resp.json();
+        alert(data.message || 'Login process launched!');
+        setTimeout(checkAppStatus, 3000);
+    } catch (e) {
+        alert('Failed to trigger login: ' + e.message);
+    }
+}
+
+async function handleLogoutNotebookLM() {
+    if (!confirm('Are you sure you want to log out of your Google NotebookLM account?')) return;
+    try {
+        const resp = await fetch('/api/auth/logout', { method: 'POST' });
+        const data = await resp.json();
+        alert(data.message || 'Logged out.');
+        checkAppStatus();
+        loadNotebooksList();
+    } catch (e) {
+        alert('Logout failed: ' + e.message);
+    }
+}
+
+function openCookiesModal() {
+    cookiesModalEl.classList.remove('hidden');
+}
+
+function closeCookiesModal() {
+    cookiesModalEl.classList.add('hidden');
+}
+
+async function handleSubmitCookies() {
+    const inputVal = document.getElementById('cookies-json-input').value.trim();
+    if (!inputVal) {
+        alert('Please paste valid cookies JSON.');
+        return;
+    }
+
+    try {
+        const resp = await fetch('/api/auth/import-cookies', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ cookies_json: inputVal })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(data.message);
+            closeCookiesModal();
+            checkAppStatus();
+            loadNotebooksList();
+        } else {
+            alert(data.message);
+        }
+    } catch (e) {
+        alert('Error importing cookies: ' + e.message);
+    }
+}
+
 async function requestMentorInsight(customQuestion = null) {
     const selectedMode = document.querySelector('input[name="translator-mode"]:checked').value;
     mentorResponseAreaEl.innerHTML = '<p class="placeholder-text">Consulting NotebookLM & Chess Engine...</p>';
@@ -362,15 +481,15 @@ async function requestMentorInsight(customQuestion = null) {
                 fen: currentFen,
                 moves: moveHistory,
                 mode: selectedMode,
-                question: customQuestion
+                question: customQuestion,
+                notebook_id: currentNotebookId
             })
         });
         const data = await resp.json();
 
-        mentorProviderBadgeEl.textContent = data.provider;
+        mentorProviderBadgeEl.textContent = data.provider || "Mentor";
+        mentorResponseAreaEl.innerHTML = formatMarkdownToHtml(data.response || "");
 
-        // Render HTML response
-        mentorResponseAreaEl.innerHTML = formatMarkdownToHtml(data.response);
     } catch (e) {
         mentorResponseAreaEl.innerHTML = `<p style="color:#e74c3c;">Failed to get AI mentor explanation: ${e.message}</p>`;
     }
@@ -407,9 +526,18 @@ async function checkAppStatus() {
             document.getElementById('engine-status-text').textContent = 'Lichess Cloud Ready';
         }
 
-        if (data.notebooklm.is_configured) {
+        if (data.notebooklm.is_logged_in) {
+            accountAuthTagEl.textContent = `Authenticated (${data.notebooklm.profile})`;
+            accountAuthTagEl.className = 'account-auth-tag green';
+            
             document.getElementById('notebook-status-text').textContent = `NotebookLM: ${data.notebooklm.notebook_id.slice(0, 8)}...`;
             document.getElementById('notebook-status-badge').querySelector('.status-dot').className = 'status-dot green';
+        } else {
+            accountAuthTagEl.textContent = 'Not Logged In';
+            accountAuthTagEl.className = 'account-auth-tag red';
+
+            document.getElementById('notebook-status-text').textContent = 'NotebookLM Standby';
+            document.getElementById('notebook-status-badge').querySelector('.status-dot').className = 'status-dot orange';
         }
     } catch (e) {
         console.error('Status check failed:', e);
@@ -432,6 +560,7 @@ async function saveSettings() {
         const data = await resp.json();
         alert('Settings saved successfully!');
         checkAppStatus();
+        loadNotebooksList();
     } catch (e) {
         alert('Failed to save settings: ' + e.message);
     }

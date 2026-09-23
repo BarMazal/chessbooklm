@@ -118,6 +118,30 @@
 
                 <!-- Tab 2: AI Mentor (NotebookLM) -->
                 <div class="tab-content" id="tab-mentor">
+                    <!-- Account & NotebookLM Login / Selector Card -->
+                    <div class="info-card">
+                        <div class="card-header">
+                            <span class="card-title">🔐 Account & NotebookLM Mentor</span>
+                            <span class="account-auth-tag red" id="account-auth-tag">Not Logged In</span>
+                        </div>
+                        
+                        <!-- Account Action Buttons -->
+                        <div class="account-action-btns">
+                            <button class="btn btn-sm btn-primary" id="btn-login-notebooklm" title="Open Google Sign-In Browser">🌐 Login Browser</button>
+                            <button class="btn btn-sm btn-secondary" id="btn-import-cookies" title="Import Cookies JSON">📋 Import Cookies</button>
+                            <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm" title="Logout current Google Account">🚪 Logout</button>
+                        </div>
+
+                        <!-- Notebook Selector Row -->
+                        <div class="notebook-select-header">
+                            <span class="mode-label">Select Mentor Notebook:</span>
+                            <button class="btn btn-sm btn-secondary" id="btn-refresh-notebooks" title="Refresh Notebooks List">🔄 Refresh</button>
+                        </div>
+                        <select id="mentor-notebook-select" class="notebook-select">
+                            <option value="">Loading notebooks...</option>
+                        </select>
+                    </div>
+
                     <!-- Mentor Action Controls -->
                     <div class="info-card">
                         <div class="card-title">Quick Tutor Insights</div>
@@ -170,7 +194,7 @@
                         <div class="form-group">
                             <label for="setting-notebook-id">Google NotebookLM Notebook ID</label>
                             <input type="text" id="setting-notebook-id" placeholder="e.g. 1a2b3c4d-5e6f-7g8h...">
-                            <small>Find your Notebook ID in the NotebookLM browser URL after opening your chess book notebook.</small>
+                            <small>Find your Notebook ID in the NotebookLM browser URL or select it from the dropdown in the AI Mentor tab.</small>
                         </div>
                     </div>
 
@@ -187,6 +211,24 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Import Cookies Modal -->
+    <div id="cookies-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📋 Import NotebookLM Session Cookies</h3>
+                <button class="modal-close" id="btn-close-cookies-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Paste your Google Cookie JSON (from <code>notebooklm auth export</code> or browser cookie extension):</p>
+                <textarea id="cookies-json-input" placeholder='[{"name": "SID", "value": "..."}, {"name": "HSID", "value": "..."}]'></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-cookies">Cancel</button>
+                <button class="btn btn-primary" id="btn-submit-cookies">Import & Authenticate</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

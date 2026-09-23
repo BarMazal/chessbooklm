@@ -1,82 +1,216 @@
 import os
+import json
 import asyncio
 import subprocess
-from typing import Dict, Any, Optional
+import tempfile
+from typing import Dict, Any, List, Optional
 from backend.config import NOTEBOOKLM_NOTEBOOK_ID, NOTEBOOKLM_AUTH_TOKEN
 
 class MentorService:
     """
     Pluggable AI Chess Mentor Service.
-    Queries NotebookLM via notebooklm-py, or falls back to smart chess heuristics.
+    Queries NotebookLM via notebooklm-py, handles account auth (login/logout/cookies),
+    lists notebooks, and updates active mentor context.
     """
 
     def __init__(self, notebook_id: str = "", auth_token: str = ""):
         self.notebook_id = notebook_id or NOTEBOOKLM_NOTEBOOK_ID
         self.auth_token = auth_token or NOTEBOOKLM_AUTH_TOKEN
 
-    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Sends query to NotebookLM notebook, or uses smart heuristic mentor fallback.
-        """
-        target_notebook = notebook_id or self.notebook_id
+    def _get_notebooklm_cmd(self) -> str:
+        venv_cmd = os.path.join(os.getcwd(), "venv", "Scripts", "notebooklm.exe")
+        if os.path.exists(venv_cmd):
+            return venv_cmd
+        venv_cmd_posix = os.path.join(os.getcwd(), "venv", "bin", "notebooklm")
+        if os.path.exists(venv_cmd_posix):
+            return venv_cmd_posix
+        return "notebooklm"
 
-        # 1. Attempt notebooklm-py query if notebook_id is present
-        if target_notebook:
-            res = await self._query_notebooklm_py(prompt, target_notebook)
-            if res.get("success"):
+    async def get_auth_status(self) -> Dict[str, Any]:
+        """
+        Checks authentication status using `notebooklm doctor --json`.
+        """
+        try:
+            cmd = [self._get_notebooklm_cmd(), "doctor", "--json"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, _ = await process.communicate()
+            if stdout:
+                data = json.loads(stdout.decode("utf-8", errors="ignore"))
+                auth_pass = data.get("checks", {}).get("auth", {}).get("status") == "pass"
+                auth_detail = data.get("checks", {}).get("auth", {}).get("detail", "")
                 return {
-                    "provider": "NotebookLM (notebooklm-py)",
-                    "response": res["text"],
-                    "notebook_id": target_notebook
+                    "is_logged_in": auth_pass,
+                    "profile": data.get("profile", "default"),
+                    "detail": auth_detail,
+                    "active_notebook_id": self.notebook_id
                 }
+        except Exception as e:
+            print(f"[MentorService] Auth status check failed: {e}")
 
-        # 2. Intelligent Heuristic Mentor Fallback
-        heuristic_response = self._generate_heuristic_explanation(prompt)
         return {
-            "provider": "Chess AI Mentor (Local Strategy Engine)",
-            "response": heuristic_response,
-            "notebook_id": target_notebook or "None (Set up NotebookLM ID in settings)"
+            "is_logged_in": False,
+            "profile": "default",
+            "detail": "Not authenticated",
+            "active_notebook_id": self.notebook_id
         }
 
-    async def _query_notebooklm_py(self, prompt: str, notebook_id: str) -> Dict[str, Any]:
+    async def trigger_login(self) -> Dict[str, Any]:
         """
-        Interacts with notebooklm-py package via Python API or CLI executable.
+        Spawns notebooklm login in background to open browser sign-in window.
         """
-        # Attempt python package import call
         try:
-            from notebooklm import NotebookLMClient
-            client = NotebookLMClient()
-            response_text = await asyncio.to_thread(client.ask, notebook_id=notebook_id, query=prompt)
-            if response_text:
-                return {"success": True, "text": str(response_text)}
-        except ImportError:
-            pass
+            cmd = [self._get_notebooklm_cmd(), "login"]
+            subprocess.Popen(cmd)
+            return {
+                "success": True,
+                "message": "Login browser window launched. Complete sign-in in your browser, then click Refresh."
+            }
         except Exception as e:
-            print(f"[MentorService] notebooklm Python API call failed: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to launch browser login: {str(e)}"
+            }
 
-        # Attempt notebooklm CLI execution as fallback
+    async def logout(self) -> Dict[str, Any]:
+        """
+        Logs out of the current Google account by clearing stored credentials.
+        """
         try:
+            cmd = [self._get_notebooklm_cmd(), "auth", "logout"]
             process = await asyncio.create_subprocess_exec(
-                "notebooklm", "query", "--notebook-id", notebook_id, prompt,
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            await process.communicate()
+            return {
+                "success": True,
+                "message": "Logged out successfully. Saved credentials cleared."
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Logout failed: {str(e)}"
+            }
+
+    async def import_cookies(self, cookies_json_str: str) -> Dict[str, Any]:
+        """
+        Imports authentication cookies from JSON content.
+        """
+        try:
+            # Validate JSON format
+            cookies_data = json.loads(cookies_json_str)
+            
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as tf:
+                json.dump(cookies_data, tf)
+                temp_path = tf.name
+
+            cmd = [self._get_notebooklm_cmd(), "auth", "import-cookies", temp_path]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+            if process.returncode == 0:
+                return {"success": True, "message": "Cookies imported successfully! Account authenticated."}
+            else:
+                err = stderr.decode("utf-8", errors="ignore") if stderr else "Import failed"
+                return {"success": False, "message": f"Cookie import failed: {err}"}
+        except json.JSONDecodeError:
+            return {"success": False, "message": "Invalid JSON format. Please provide valid Google cookie JSON."}
+        except Exception as e:
+            return {"success": False, "message": f"Import error: {str(e)}"}
+
+    async def list_notebooks(self) -> List[Dict[str, Any]]:
+        """
+        Lists all available NotebookLM notebooks for the logged-in user.
+        """
+        try:
+            cmd = [self._get_notebooklm_cmd(), "list", "--json"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
             stdout, stderr = await process.communicate()
             if process.returncode == 0 and stdout:
-                return {"success": True, "text": stdout.decode("utf-8").strip()}
+                raw_text = stdout.decode("utf-8", errors="ignore").strip()
+                data = json.loads(raw_text)
+                notebooks_raw = data.get("notebooks", [])
+                result = []
+                for nb in notebooks_raw:
+                    nb_id = nb.get("id")
+                    result.append({
+                        "id": nb_id,
+                        "title": nb.get("title") or f"Notebook {nb_id[:8] if nb_id else ''}",
+                        "created_at": nb.get("created_at"),
+                        "is_active": nb_id == self.notebook_id
+                    })
+                return result
             else:
-                err_msg = stderr.decode("utf-8").strip() if stderr else "Unknown CLI error"
-                print(f"[MentorService] notebooklm CLI query returned non-zero code: {err_msg}")
+                err = stderr.decode("utf-8", errors="ignore") if stderr else "Unknown error"
+                print(f"[MentorService] notebooklm list returned non-zero code: {err}")
         except Exception as e:
-            print(f"[MentorService] notebooklm CLI execution error: {e}")
+            print(f"[MentorService] Failed to list notebooks: {e}")
+        return []
+
+    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Sends query to NotebookLM notebook, or falls back to smart strategy engine.
+        """
+        target_notebook = notebook_id or self.notebook_id
+
+        if target_notebook:
+            res = await self._query_notebooklm_py(prompt, target_notebook)
+            if res.get("success"):
+                return {
+                    "provider": f"NotebookLM ({target_notebook[:8]}...)",
+                    "response": res["text"],
+                    "notebook_id": target_notebook
+                }
+
+        heuristic_response = self._generate_heuristic_explanation(prompt)
+        return {
+            "provider": "Chess AI Mentor (Local Strategy Engine)",
+            "response": heuristic_response,
+            "notebook_id": target_notebook or "None (Select a NotebookLM notebook)"
+        }
+
+    async def _query_notebooklm_py(self, prompt: str, notebook_id: str) -> Dict[str, Any]:
+        """
+        Queries NotebookLM notebook via CLI ask subcommand.
+        """
+        try:
+            cmd = [self._get_notebooklm_cmd(), "ask", "--notebook-id", notebook_id, prompt]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode == 0 and stdout:
+                output_text = stdout.decode("utf-8", errors="ignore").strip()
+                return {"success": True, "text": output_text}
+            else:
+                err_msg = stderr.decode("utf-8", errors="ignore").strip() if stderr else "Unknown error"
+                print(f"[MentorService] notebooklm ask failed: {err_msg}")
+        except Exception as e:
+            print(f"[MentorService] notebooklm ask exception: {e}")
 
         return {"success": False, "text": ""}
 
     def _generate_heuristic_explanation(self, prompt: str) -> str:
-        """
-        Generates structured, instructive chess advice when NotebookLM is not yet linked.
-        """
-        # Simple extraction of key details from prompt
         lines = prompt.split("\n")
         eval_line = next((l for l in lines if "Evaluation:" in l or "Score:" in l), "Equally balanced position.")
         opening_line = next((l for l in lines if "Opening:" in l), "Standard Opening Position.")
@@ -97,5 +231,5 @@ In this game phase, key focus areas include controlling the central squares (d4,
 *   **Pawn Structure:** Maintain central presence or establish pawn chains that support piece outposts.
 *   **Piece Coordination:** Bring Rooks to open or semi-open files, castle early, and avoid leaving pieces un-defended (LPDO - Loose Pieces Drop Off).
 
-*(Tip: Connect your Google NotebookLM notebook in settings to get direct book quotes, grandmaster game references, and customized textbook lessons!)*
+*(Tip: Click 'Account & Notebooks' in the toolbar to log in and pick your NotebookLM chess books notebook!)*
 """

@@ -21,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Engine & Mentor Manager
 engine_manager = ChessEngineManager(stockfish_path=STOCKFISH_PATH)
 mentor_service = MentorService(notebook_id=NOTEBOOKLM_NOTEBOOK_ID, auth_token=NOTEBOOKLM_AUTH_TOKEN)
 
@@ -46,6 +45,14 @@ class ConfigUpdateRequest(BaseModel):
     auth_token: Optional[str] = None
 
 
+class SelectNotebookRequest(BaseModel):
+    notebook_id: str
+
+
+class ImportCookiesRequest(BaseModel):
+    cookies_json: str
+
+
 @app.on_event("shutdown")
 def shutdown_event():
     engine_manager.close()
@@ -53,6 +60,7 @@ def shutdown_event():
 
 @app.get("/api/status")
 async def get_status():
+    auth_info = await mentor_service.get_auth_status()
     return {
         "status": "online",
         "stockfish": {
@@ -61,8 +69,84 @@ async def get_status():
         },
         "notebooklm": {
             "notebook_id": mentor_service.notebook_id or "Not configured",
-            "is_configured": bool(mentor_service.notebook_id)
+            "is_configured": bool(mentor_service.notebook_id),
+            "is_logged_in": auth_info["is_logged_in"],
+            "profile": auth_info["profile"]
         }
+    }
+
+
+@app.get("/api/auth/status")
+async def get_auth_status():
+    """
+    Returns Google NotebookLM account authentication status and active profile.
+    """
+    return await mentor_service.get_auth_status()
+
+
+@app.post("/api/auth/login")
+async def trigger_login():
+    """
+    Triggers notebooklm login process in browser.
+    """
+    return await mentor_service.trigger_login()
+
+
+@app.post("/api/auth/logout")
+async def logout():
+    """
+    Logs out of the current Google NotebookLM account.
+    """
+    return await mentor_service.logout()
+
+
+@app.post("/api/auth/import-cookies")
+async def import_cookies(req: ImportCookiesRequest):
+    """
+    Imports Google authentication cookies from JSON.
+    """
+    return await mentor_service.import_cookies(req.cookies_json)
+
+
+@app.get("/api/notebooks")
+async def get_notebooks():
+    """
+    Returns list of all available NotebookLM notebooks for the user.
+    """
+    notebooks = await mentor_service.list_notebooks()
+    return {
+        "active_notebook_id": mentor_service.notebook_id,
+        "notebooks": notebooks
+    }
+
+
+@app.post("/api/notebooks/select")
+async def select_notebook(req: SelectNotebookRequest):
+    """
+    Sets the active NotebookLM notebook to be used as the AI Mentor.
+    """
+    mentor_service.notebook_id = req.notebook_id
+    
+    # Save to .env file if present
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "NOTEBOOKLM_NOTEBOOK_ID=" in content:
+                import re
+                content = re.sub(r"NOTEBOOKLM_NOTEBOOK_ID=.*", f"NOTEBOOKLM_NOTEBOOK_ID={req.notebook_id}", content)
+            else:
+                content += f"\nNOTEBOOKLM_NOTEBOOK_ID={req.notebook_id}\n"
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            print(f"[Main] Failed to update .env: {e}")
+
+    return {
+        "success": True,
+        "active_notebook_id": mentor_service.notebook_id,
+        "message": f"Active NotebookLM Mentor updated to ID: {req.notebook_id}"
     }
 
 
@@ -88,7 +172,6 @@ async def evaluate_board(req: BoardStateRequest):
         opening_name = ChessTranslator.identify_opening(board)
         tactics = ChessTranslator.get_tactical_summary(board)
 
-        # Generate legal moves SAN/UCI
         legal_moves = [{"uci": m.uci(), "san": board.san(m)} for m in board.legal_moves]
 
         return {
@@ -125,7 +208,6 @@ async def explain_position(req: MentorExplainRequest):
 
         eval_res = await engine_manager.evaluate_position(board, depth=12)
 
-        # Build prompt using human translation or raw FEN mode as requested
         if req.mode == "raw_fen":
             prompt = ChessTranslator.translate_raw_fen_mode(req.fen, req.question)
         else:
@@ -162,7 +244,6 @@ async def update_config(req: ConfigUpdateRequest):
         "status": await get_status()
     }
 
-# Mount static frontend directory if present
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 if os.path.exists(frontend_dir):
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
