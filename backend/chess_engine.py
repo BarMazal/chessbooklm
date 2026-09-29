@@ -20,10 +20,14 @@ class ChessEngineManager:
         if self.stockfish_path and os.path.exists(self.stockfish_path):
             candidates.append(self.stockfish_path)
         
-        # Check standard default locations on Windows/Linux
+        # Check standard default locations on Windows/Linux/macOS
         candidates.extend([
             "stockfish.exe",
             "stockfish/stockfish.exe",
+            "stockfish/stockfish",
+            "stockfish/stockfish-windows-x86-64-universal.exe",
+            "stockfish/stockfish-ubuntu-x86-64-universal",
+            "stockfish/stockfish-macos-x86-64-universal",
             "C:\\stockfish\\stockfish.exe",
             "/usr/games/stockfish",
             "/usr/local/bin/stockfish"
@@ -56,7 +60,7 @@ class ChessEngineManager:
             try:
                 info = self._engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
                 best_line = info[0] if isinstance(info, list) else info
-                score_obj = best_line["score"].relative
+                score_obj = best_line["score"].white()
 
                 if score_obj.is_mate():
                     mate_val = score_obj.mate()
@@ -76,10 +80,11 @@ class ChessEngineManager:
                     if pv:
                         move = pv[0]
                         move_san = board.san(move)
+                        item_score = str(item.get("score").white()) if "score" in item else ""
                         top_moves.append({
                             "uci": move.uci(),
                             "san": move_san,
-                            "score": str(item.get("score", "").relative) if "score" in item else ""
+                            "score": item_score
                         })
 
                 best_move = top_moves[0]["uci"] if top_moves else ""
@@ -105,6 +110,96 @@ class ChessEngineManager:
 
         # 3. Heuristic Fallback based on material balance & active board state
         return self._heuristic_eval(board)
+
+    async def get_bot_move(self, board: chess.Board, skill_level: int = 20, target_elo: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Generates a move for computer opponent based on requested difficulty skill level (0-20) or target ELO rating.
+        """
+        skill_level = max(0, min(20, skill_level))
+        effective_elo = int(target_elo) if (target_elo is not None) else (400 + skill_level * 100)
+
+        if self._engine:
+            try:
+                if effective_elo >= 1320:
+                    bounded_elo = min(3190, effective_elo)
+                    self._engine.configure({
+                        "UCI_LimitStrength": True,
+                        "UCI_Elo": bounded_elo,
+                        "Skill Level": skill_level
+                    })
+                    limit = chess.engine.Limit(time=0.25)
+                else:
+                    # Low ELO (e.g. 400 - 1300): Limit strength + shallow depth limit
+                    self._engine.configure({
+                        "UCI_LimitStrength": True,
+                        "UCI_Elo": 1320,
+                        "Skill Level": max(0, skill_level)
+                    })
+                    limit = chess.engine.Limit(depth=1, time=0.08)
+
+                result = self._engine.play(board, limit)
+                move = result.move
+
+                # For low ELO (like 400), introduce realistic human mistake frequency
+                if effective_elo <= 800:
+                    legal_moves = list(board.legal_moves)
+                    if len(legal_moves) > 1:
+                        import random
+                        prob_mistake = 0.60 if effective_elo <= 500 else 0.35
+                        if random.random() < prob_mistake:
+                            non_top = [m for m in legal_moves if m != move]
+                            if non_top:
+                                move = random.choice(non_top[:min(4, len(non_top))])
+
+                try:
+                    self._engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
+                except Exception:
+                    pass
+
+                if move:
+                    return {
+                        "move_uci": move.uci(),
+                        "move_san": board.san(move),
+                        "skill_level": skill_level,
+                        "target_elo": effective_elo,
+                        "source": "local_stockfish"
+                    }
+            except Exception as e:
+                print(f"[EngineManager] Bot move generation error: {e}")
+                try:
+                    self._engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})
+                except Exception:
+                    pass
+
+        # Fallback using position evaluation candidates
+        eval_res = await self.evaluate_position(board, depth=10)
+        top_moves = eval_res.get("top_moves", [])
+        if top_moves:
+            if skill_level < 10 and len(top_moves) > 1:
+                import random
+                weights = [skill_level + 2, (10 - skill_level) // 2 + 1, (10 - skill_level) // 2]
+                chosen = random.choices(top_moves[:len(weights)], weights=weights[:len(top_moves)])[0]
+            else:
+                chosen = top_moves[0]
+            return {
+                "move_uci": chosen["uci"],
+                "move_san": chosen["san"],
+                "skill_level": skill_level,
+                "source": eval_res.get("source", "fallback")
+            }
+
+        legal_moves = list(board.legal_moves)
+        if legal_moves:
+            chosen_move = legal_moves[0]
+            return {
+                "move_uci": chosen_move.uci(),
+                "move_san": board.san(chosen_move),
+                "skill_level": skill_level,
+                "source": "heuristic_fallback"
+            }
+
+        return {"move_uci": "", "move_san": "", "skill_level": skill_level, "source": "none"}
+
 
     async def _fetch_cloud_eval(self, fen: str) -> Optional[Dict[str, Any]]:
         try:
@@ -174,9 +269,8 @@ class ChessEngineManager:
                 val = PIECE_VALUES.get(piece.piece_type, 0.0)
                 score += val if piece.color == chess.WHITE else -val
 
-        turn_mult = 1.0 if board.turn == chess.WHITE else -1.0
-        rel_score = round(score * turn_mult, 2)
-        formatted_score = f"{'+' if rel_score > 0 else ''}{rel_score}"
+        white_score = round(score, 2)
+        formatted_score = f"{'+' if white_score > 0 else ''}{white_score}"
 
         legal_moves = list(board.legal_moves)
         best_uci = legal_moves[0].uci() if legal_moves else ""
@@ -186,7 +280,7 @@ class ChessEngineManager:
             "source": "heuristic",
             "score": formatted_score,
             "eval_type": "cp",
-            "eval_val": rel_score,
+            "eval_val": white_score,
             "best_move": best_uci,
             "best_move_san": best_san,
             "top_moves": [{"uci": m.uci(), "san": board.san(m)} for m in legal_moves[:3]],

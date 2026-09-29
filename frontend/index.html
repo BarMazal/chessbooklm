@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess AI Mentor & Stockfish Suite</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="app-container">
         <!-- Top Header Navigation -->
@@ -21,6 +25,12 @@
                 </div>
             </div>
             <div class="header-status">
+                <div class="status-badge profile-badge" id="header-profile-badge"
+                    title="Click to view User Profile & Skill Matrix">
+                    <span class="profile-avatar">👤</span>
+                    <span id="header-profile-name">Player</span>
+                    <span class="profile-elo-tag" id="header-profile-elo">1500 ELO</span>
+                </div>
                 <div class="status-badge" id="engine-status-badge">
                     <span class="status-dot green"></span>
                     <span id="engine-status-text">Engine Ready</span>
@@ -29,13 +39,136 @@
                     <span class="status-dot orange"></span>
                     <span id="notebook-status-text">NotebookLM Standby</span>
                 </div>
+                <button class="btn btn-sm btn-secondary" id="header-btn-toggle-board" style="padding:4px 10px; font-size:12px; font-weight:600; border:1px solid #81b64c; color:#fff;" title="Collapse / Expand board pane to left side">❮❮ Hide Board</button>
             </div>
         </header>
 
-        <!-- Main Workspace -->
+        <!-- Main Workspace (3-Pane Layout) -->
         <main class="workspace">
-            <!-- Left Workspace: Chess Board & Eval Bar -->
-            <section class="board-section">
+            <!-- Left Sidebar Pane: Stockfish Analysis & Settings -->
+            <section class="sidebar-section left-sidebar" id="left-sidebar">
+                <!-- Draggable Horizontal Resizer (Right edge of left sidebar) -->
+                <div class="sidebar-resizer resizer-right" id="left-sidebar-resizer" title="Drag left/right to resize left pane width"></div>
+
+                <!-- Left Sidebar Navigation Tabs -->
+                <div class="sidebar-tabs">
+                    <button class="tab-btn active" data-tab="tab-stockfish">📊 Analysis</button>
+                    <button class="tab-btn" data-tab="tab-settings">⚙️ Settings</button>
+                </div>
+
+                <!-- Left Tab 1: Stockfish Tools & Move History -->
+                <div class="tab-content active" id="tab-stockfish">
+                    <!-- Stockfish Tools Card (Opening status, Candidate lines, Move history) -->
+                    <div class="info-card collapsible-card" id="card-stockfish-tools">
+                        <div class="card-header-bar clickable" id="header-stockfish-tools" style="display:flex; justify-content:space-between; align-items:center;" title="Click to collapse / expand Stockfish analysis & move tools">
+                            <div class="header-title-group" style="display:flex; align-items:center; gap:6px;">
+                                <button class="collapse-btn" id="btn-toggle-stockfish-tools">▼</button>
+                                <span class="card-title" style="font-weight:700; font-size:13px; color:#fff;">⚙️ Stockfish Tools & Move History</span>
+                            </div>
+                            <span class="opening-title" id="opening-name" style="font-size:11px; color:#81b64c; max-width:140px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">Starting Position</span>
+                        </div>
+                        <div class="card-collapsible-body" id="body-stockfish-tools" style="margin-top:8px; display:flex; flex-direction:column; gap:10px;">
+                            <!-- Opening Status & Eval Bar -->
+                            <div class="sub-card-box">
+                                <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <span class="turn-badge white" id="turn-badge">White to move</span>
+                                </div>
+                                <div class="eval-summary-grid">
+                                    <div class="summary-item">
+                                        <span class="label">Stockfish Score</span>
+                                        <span class="val highlight" id="summary-eval">+0.0</span>
+                                    </div>
+                                    <div class="summary-item">
+                                        <span class="label">Best Recommendation</span>
+                                        <span class="val" id="summary-best-move">-</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Engine Candidate Lines -->
+                            <div class="sub-card-box">
+                                <div class="sub-card-title" style="font-size:11px; font-weight:700; color:#8b8987; margin-bottom:4px;">Top Engine Lines:</div>
+                                <ul class="engine-lines-list" id="engine-lines-list">
+                                    <li class="empty-line">Analyzing position...</li>
+                                </ul>
+                            </div>
+
+                            <!-- Move History PGN Table -->
+                            <div class="sub-card-box" style="flex: 1 1 0%; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
+                                <div class="sub-card-title" style="font-size:11px; font-weight:700; color:#8b8987; margin-bottom:4px;">Move History:</div>
+                                <div class="move-history-container" id="move-history-container" style="flex: 1 1 0%; min-height: 0; max-height: none; overflow-y: auto;">
+                                    <table class="move-table">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>White</th>
+                                                <th>Black</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="move-history-tbody">
+                                            <!-- Moves populated dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Left Tab 2: Settings -->
+                <div class="tab-content" id="tab-settings">
+                    <div class="info-card">
+                        <div class="card-title">🤖 Live AI Coach & LLM Auto-Analysis</div>
+                        <div class="form-group" style="margin-bottom:12px;">
+                            <label for="setting-enable-auto-llm-analysis" style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; color:#fff;">
+                                <input type="checkbox" id="setting-enable-auto-llm-analysis" checked style="cursor:pointer; accent-color:#81b64c;">
+                                <span>Enable Automatic LLM Analysis</span>
+                            </label>
+                            <small>When unchecked, automatic background LLM requests are paused. You can still ask the mentor manually anytime.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="setting-coaching-interval">Auto-Coaching Move Frequency</label>
+                            <select id="setting-coaching-interval" class="setting-select" style="background:#161512; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:6px 10px; font-size:12px; width:100%; margin-top:4px;">
+                                <option value="1">Every 1 Move</option>
+                                <option value="2" selected>Every 2 Moves (Recommended)</option>
+                                <option value="3">Every 3 Moves</option>
+                                <option value="5">Every 5 Moves</option>
+                                <option value="0">Disabled (Manual Only)</option>
+                            </select>
+                            <small>Controls how frequently the AI Mentor automatically sends background live coaching commentary to the Analysis tab feed.</small>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="card-title">NotebookLM Connection</div>
+                        <div class="form-group">
+                            <label for="setting-notebook-id">Google NotebookLM Notebook ID</label>
+                            <input type="text" id="setting-notebook-id" placeholder="e.g. 1a2b3c4d-5e6f-7g8h...">
+                            <small>Find your Notebook ID in the NotebookLM browser URL or select it from the dropdown in
+                                the AI Mentor tab.</small>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="card-title">Stockfish Engine Path</div>
+                        <div class="form-group">
+                            <label for="setting-stockfish-path">Local Executable Path (Optional)</label>
+                            <input type="text" id="setting-stockfish-path"
+                                placeholder="e.g. C:\stockfish\stockfish.exe">
+                            <small>If left blank, the application will use Lichess Cloud Analysis API
+                                automatically.</small>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="btn-save-settings">💾 Save Configuration</button>
+                </div>
+            </section>
+
+            <!-- Center Board Section -->
+            <section class="board-section" id="board-section">
+                <!-- Collapse Board Pane Button -->
+                <button id="btn-toggle-board-collapse" class="btn-toggle-board-collapse" title="Collapse board pane to left side">❮❮ Hide Board</button>
+
                 <!-- Vertical Eval Bar -->
                 <div class="eval-bar-container">
                     <div class="eval-bar" id="eval-bar">
@@ -44,105 +177,298 @@
                     <div class="eval-score-text" id="eval-score-badge">+0.0</div>
                 </div>
 
-                <!-- Board Wrapper with Canvas for Arrows -->
-                <div class="board-wrapper">
-                    <div id="chessboard" class="chessboard"></div>
-                    <svg id="board-arrows-svg" class="board-arrows-svg"></svg>
+                <!-- Main Board Column (Clocks top/bottom, Board, Banners, Controls) -->
+                <div class="board-column">
+                    <!-- Top Clock Bar (Opponent / Top Player side) -->
+                    <div id="top-clock-bar" class="clock-bar-row"></div>
+
+                    <!-- Interactive Move Replay Banner -->
+                    <div id="move-replay-banner" class="move-replay-banner hidden" style="display:flex; justify-content:space-between; align-items:center; background:linear-gradient(135deg, #2c3e50, #34495e); border:1px solid #4a6984; color:#fff; padding:6px 14px; border-radius:8px; margin-bottom:8px; font-size:12px; font-weight:600;">
+                        <span id="replay-banner-text">📜 Viewing Move #1 (1. e4)</span>
+                        <button class="btn btn-xs btn-accent" id="btn-return-live-game" style="font-size:11px; padding:2px 8px;">➡️ Return to Live Game</button>
+                    </div>
+
+                    <!-- Piece Palette Bar (Visible only during Edit Board mode) -->
+                    <div id="piece-palette-bar" class="piece-palette-bar hidden">
+                        <div class="palette-header">
+                            <span class="palette-title">✏️ Board Editor - Click piece to place or select piece on board to
+                                move/remove</span>
+                            <div class="turn-select-group">
+                                <span class="turn-label">Active Turn:</span>
+                                <label class="turn-radio"><input type="radio" name="edit-active-turn" value="w" checked> ⚪
+                                    White</label>
+                                <label class="turn-radio"><input type="radio" name="edit-active-turn" value="b"> ⚫
+                                    Black</label>
+                            </div>
+                        </div>
+                        <div class="palette-rows">
+                            <div class="palette-row">
+                                <span class="row-label">White:</span>
+                                <div class="piece-option" data-piece="wK" title="White King"></div>
+                                <div class="piece-option" data-piece="wQ" title="White Queen"></div>
+                                <div class="piece-option" data-piece="wR" title="White Rook"></div>
+                                <div class="piece-option" data-piece="wB" title="White Bishop"></div>
+                                <div class="piece-option" data-piece="wN" title="White Knight"></div>
+                                <div class="piece-option" data-piece="wP" title="White Pawn"></div>
+                            </div>
+                            <div class="palette-row">
+                                <span class="row-label">Black:</span>
+                                <div class="piece-option" data-piece="bK" title="Black King"></div>
+                                <div class="piece-option" data-piece="bQ" title="Black Queen"></div>
+                                <div class="piece-option" data-piece="bR" title="Black Rook"></div>
+                                <div class="piece-option" data-piece="bB" title="Black Bishop"></div>
+                                <div class="piece-option" data-piece="bN" title="Black Knight"></div>
+                                <div class="piece-option" data-piece="bP" title="Black Pawn"></div>
+                            </div>
+                            <div class="palette-actions">
+                                <button class="palette-btn trash-btn" id="btn-palette-trash" data-piece="trash"
+                                    title="Click square to remove piece">🗑️ Remove Piece</button>
+                                <button class="palette-btn clear-btn" id="btn-clear-board"
+                                    title="Clear all pieces from board">🧹 Clear Board</button>
+                                <button class="palette-btn reset-palette-btn" id="btn-reset-initial-board"
+                                    title="Reset to standard opening position">♟️ Standard Setup</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Board Wrapper with Canvas for Arrows & Top/Middle/Bottom Check Banners -->
+                    <div class="board-wrapper">
+                        <div id="check-banner-top" class="check-side-banner top-banner hidden">⚠️ CHECK!</div>
+                        <div id="check-banner-middle" class="check-side-banner middle-banner hidden">🤝 STALEMATE!</div>
+                        <div id="chessboard" class="chessboard"></div>
+                        <svg id="board-arrows-svg" class="board-arrows-svg"></svg>
+                        <div id="check-banner-bottom" class="check-side-banner bottom-banner hidden">⚠️ CHECK!</div>
+                        
+                        <!-- Animated LLM Square Labels Scanning Overlay -->
+                        <div id="board-llm-scanning-overlay" class="board-llm-scanning-overlay hidden">
+                            <div class="llm-scanline"></div>
+                            <div class="llm-scan-badge">
+                                <span class="scan-spinner">🤖</span>
+                                <span id="llm-scan-text" class="scan-text">LLM Analyzing Square Labels & Motifs...</span>
+                                <div class="typing-dots"><span></span><span></span><span></span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Clock Bar (Player / Bottom Player side) -->
+                    <div id="bottom-clock-bar" class="clock-bar-row"></div>
+
+                    <!-- Clock Store to keep clock elements in DOM -->
+                    <div id="clock-elements-store" class="hidden">
+                        <div class="player-clock-card black-clock" id="clock-card-black">
+                            <div class="clock-player-info">
+                                <span class="player-icon">⚫</span>
+                                <span class="player-name-text" id="clock-black-name">Black</span>
+                                <span class="player-type-tag" id="clock-black-type">🧑 Human</span>
+                            </div>
+                            <div class="clock-right-info">
+                                <span class="time-control-tag" id="clock-time-control-name">⚡ 5+0 Blitz</span>
+                                <div class="digital-time-display" id="clock-display-black">05:00</div>
+                            </div>
+                        </div>
+
+                        <div class="player-clock-card white-clock active-turn" id="clock-card-white">
+                            <div class="clock-player-info">
+                                <span class="player-icon">⚪</span>
+                                <span class="player-name-text" id="clock-white-name">White</span>
+                                <span class="player-type-tag" id="clock-white-type">🧑 Human</span>
+                            </div>
+                            <div class="digital-time-display" id="clock-display-white">05:00</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Board Action Controls Bar -->
                 <div class="board-controls">
+                    <button class="btn btn-primary" id="btn-quick-new-game"
+                        title="Instantly start a fresh game using saved persistent settings (random colors, bots, auto-adjust)">⚡ Quick New Game</button>
+                    <button class="btn btn-secondary" id="btn-new-game-modal-trigger"
+                        title="Open setup modal to configure players, difficulties, and colors">⚙️ New Game Setup...</button>
+                    <button class="btn btn-secondary" id="btn-reset" title="Reset board to starting position">🔄 Reset Board</button>
+                    <button class="btn btn-secondary" id="btn-open-game-manager"
+                        title="Save / Load Games, FEN & PGN Export/Import">💾 Games & PGN</button>
+                    <button class="btn btn-secondary" id="btn-game-settings"
+                        title="Configure Game & Display Settings">⚙️ Game Settings</button>
+                    <button class="btn btn-secondary" id="btn-edit-board" title="Edit Chess Board Pieces & Position">✏️
+                        Edit Board</button>
+                    <button class="btn btn-secondary" id="btn-full-game-analysis"
+                        title="Generate Move Classifications & AI Coach Post-Game Report">🔍 Game Analysis</button>
+                    <button class="btn btn-secondary" id="btn-opening-explorer"
+                        title="Explore Opening ECO database, candidate branches & win rates">📖 Opening Book</button>
+                    <button class="btn btn-secondary" id="btn-show-hint" title="Show Hint Arrow for Current Move">💡
+                        Show Hint</button>
+                    <button class="btn btn-accent" id="btn-pause-resume" title="Start / Pause / Resume Computer Auto-Play">▶️
+                        Start</button>
+                    <button class="btn btn-secondary" id="btn-collapse-board-ctrl" title="Collapse board pane to left side">❮❮ Hide Board</button>
                     <button class="btn btn-secondary" id="btn-flip" title="Flip Board Side">🔄 Flip</button>
                     <button class="btn btn-secondary" id="btn-undo" title="Undo Move">⬅️ Undo</button>
-                    <button class="btn btn-secondary" id="btn-reset" title="Reset Game">🔄 Reset</button>
+                    <button class="btn btn-danger" id="btn-resign" title="Resign game immediately (active turn side surrenders)">🏳️ Resign</button>
                     <button class="btn btn-primary" id="btn-bot-move" title="Stockfish Play Move">🤖 Bot Move</button>
+                    <button class="btn btn-warning" id="btn-force-move"
+                        title="Force computer to play move immediately if taking too long">⚡ Force Move</button>
                 </div>
             </section>
 
-            <!-- Right Workspace: Sidebar Panels & AI Mentor -->
-            <section class="sidebar-section">
-                <!-- Draggable Horizontal Resizer -->
-                <div class="sidebar-resizer" id="sidebar-resizer" title="Drag left/right to resize sidebar width"></div>
+            <!-- Right Sidebar Pane: Live Analysis & AI Mentor (Two LLM Tabs) -->
+            <section class="sidebar-section right-sidebar" id="right-sidebar">
+                <!-- Draggable Horizontal Resizer (Left edge of right sidebar) -->
+                <div class="sidebar-resizer resizer-left" id="right-sidebar-resizer" title="Drag left/right to resize right pane width"></div>
 
-                <!-- Navigation Tabs -->
+                <!-- Right Sidebar Navigation Tabs -->
                 <div class="sidebar-tabs">
-                    <button class="tab-btn active" data-tab="tab-analysis">📊 Analysis & Game</button>
-                    <button class="tab-btn" data-tab="tab-mentor">🎓 AI Mentor (NotebookLM)</button>
-                    <button class="tab-btn" data-tab="tab-settings">⚙️ Settings</button>
+                    <button class="tab-btn active" data-tab="tab-live-analysis">📊 Live Analysis</button>
+                    <button class="tab-btn" data-tab="tab-mentor">🎓 AI Mentor</button>
                 </div>
 
-                <!-- Tab 1: Analysis & Game -->
-                <div class="tab-content active" id="tab-analysis">
-                    <!-- Opening & Status Card -->
-                    <div class="info-card">
-                        <div class="card-header">
-                            <span class="opening-title" id="opening-name">Starting Position</span>
-                            <span class="turn-badge white" id="turn-badge">White to move</span>
+                <!-- Right Tab 1: Live Analysis & Board Overlays -->
+                <div class="tab-content active" id="tab-live-analysis">
+                    <!-- Positional Overlays Control Toolbar -->
+                    <div class="overlay-toolbar" style="display:flex; flex-direction:column; gap:6px; background:#161512; border:1px solid var(--card-border); border-radius:8px; padding:8px; margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-size:11px; font-weight:700; color:#81b64c;">🗺️ Board Overlays:</span>
+                            <button class="btn btn-xs btn-secondary" id="btn-fetch-llm-square-labels" title="Ask LLM engine to analyze position & highlight square labels on board" style="padding:3px 8px; font-size:11px;">🤖 LLM Square Labels</button>
                         </div>
-                        <div class="eval-summary-grid">
-                            <div class="summary-item">
-                                <span class="label">Stockfish Score</span>
-                                <span class="val highlight" id="summary-eval">+0.0</span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="label">Best Recommendation</span>
-                                <span class="val" id="summary-best-move">-</span>
-                            </div>
+                        <div style="display:flex; gap:6px;">
+                            <select id="select-overlay-side-filter" class="setting-select" style="flex:1; background:#0e0d0b; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 6px; font-size:11px;" title="Filter overlays by side (White / Black / All / Off)">
+                                <option value="all" selected>☯️ All Sides</option>
+                                <option value="white">⚪ White</option>
+                                <option value="black">⚫ Black</option>
+                                <option value="off">🚫 Off</option>
+                            </select>
+                            <select id="select-overlay-motif-filter" class="setting-select" style="flex:1; background:#0e0d0b; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 6px; font-size:11px;" title="Filter overlays by type (Outposts & Strong / Weak & Targets / All)">
+                                <option value="all" selected>🎯 All Motifs</option>
+                                <option value="good">🏰 Outposts & Strong</option>
+                                <option value="weak">🛡️ Weak & Targets</option>
+                            </select>
                         </div>
                     </div>
 
-                    <!-- Top Candidate Engine Lines -->
-                    <div class="info-card">
-                        <div class="card-title">Top Engine Candidate Lines</div>
-                        <ul class="engine-lines-list" id="engine-lines-list">
-                            <li class="empty-line">Analyzing position...</li>
-                        </ul>
-                    </div>
+                    <!-- Mentoring Tools Card (Subject practice instructions, Turn guidelines & checklist) -->
+                    <div class="info-card collapsible-card" id="card-mentoring-tools">
+                        <div class="card-header-bar clickable" id="header-mentoring-tools" style="display:flex; justify-content:space-between; align-items:center;" title="Click to collapse / expand mentoring tools & turn guidelines">
+                            <div class="header-title-group" style="display:flex; align-items:center; gap:6px;">
+                                <button class="collapse-btn" id="btn-toggle-mentoring-tools">▼</button>
+                                <span class="card-title" style="font-weight:700; font-size:13px; color:#fff;">🎓 Mentoring Tools & Turn Checklist</span>
+                            </div>
+                            <div class="header-actions" style="display:flex; gap:4px; align-items:center;">
+                                <button class="btn btn-sm btn-accent" id="btn-maximize-live-feed" title="Collapse Focus & Guidelines together to give maximum space to Live AI Coach Feed" style="padding:2px 8px; font-size:11px;">⚡ Maximize Live Feed</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-auto-extract-guidelines" title="Extract actionable turn guidelines automatically from game analysis & mentor advice" style="padding:2px 8px; font-size:11px;">🤖 Auto-Extract</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-add-guideline-modal" title="Add custom turn guideline manually" style="padding:2px 8px; font-size:11px;">➕ Add Rule</button>
+                            </div>
+                        </div>
+                        <div class="card-collapsible-body" id="body-mentoring-tools" style="margin-top:8px; display:flex; flex-direction:column; gap:10px;">
+                            <!-- Subject Practice Instructions (Collapsible Sub-Card) -->
+                            <div class="sub-card-box collapsible-sub-card collapsed" id="card-practice-subject">
+                                <div class="sub-card-header clickable" id="header-practice-subject" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="Click to collapse / expand Focus Subject">
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <button class="collapse-btn" id="btn-toggle-practice-subject">▼</button>
+                                        <span class="sub-card-title" style="font-size:11px; font-weight:700; color:#fff;">🎯 Focus Practice Subject</span>
+                                    </div>
+                                </div>
+                                <div class="sub-card-body" id="body-practice-subject" style="margin-top:6px;">
+                                    <div class="practice-subject-selector-row" style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+                                        <label for="practice-subject-select" class="subject-label" style="font-size:11px; color:#8b8987; width:85px; flex-shrink:0;">Focus Subject:</label>
+                                        <select id="practice-subject-select" class="setting-select subject-select" style="flex:1; background:#161512; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 6px; font-size:11px;">
+                                            <option value="auto" selected>🤖 Auto (Mentor Prioritized)</option>
+                                            <option value="loose_pieces">🛡️ Loose Pieces & Undefended Targets</option>
+                                            <option value="king_safety">👑 King Safety & Escape Squares (Luft)</option>
+                                            <option value="material_simplification">🎯 Material Advantage & Simplification</option>
+                                            <option value="piece_activity">🏰 Piece Activity & Center Control</option>
+                                            <option value="pawn_structure">♟️ Pawn Structure & Weak Squares</option>
+                                        </select>
+                                        <button class="btn btn-sm btn-secondary" id="btn-suggest-subjects" title="Suggest new subjects & pitfalls based on student game history" style="padding:2px 6px; font-size:10px; flex-shrink:0;">🤖 Suggest</button>
+                                    </div>
+                                    <div class="practice-instruction-box" id="practice-instruction-content">
+                                        <div class="practice-instruction-header">
+                                            <span class="subject-icon" id="practice-instruction-icon">🎯</span>
+                                            <span class="subject-name" id="practice-instruction-title">Material & Tactics Focus</span>
+                                        </div>
+                                        <p class="practice-instruction-text" id="practice-instruction-text">
+                                            Mentor advice will appear here live during your turn based on the current board setup.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
 
-                    <!-- Move History PGN Table -->
-                    <div class="info-card flex-grow">
-                        <div class="card-title">Move History</div>
-                        <div class="move-history-container" id="move-history-container">
-                            <table class="move-table">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>White</th>
-                                        <th>Black</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="move-history-tbody">
-                                    <!-- Moves populated dynamically -->
-                                </tbody>
-                            </table>
+                            <!-- Turn Guidelines & Tactical Checklist (Collapsible Sub-Card) -->
+                            <div class="sub-card-box collapsible-sub-card collapsed" id="card-turn-guidelines">
+                                <div class="sub-card-header clickable" id="header-turn-guidelines" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="Click to collapse / expand Global Turn Guidelines">
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <button class="collapse-btn" id="btn-toggle-turn-guidelines">▼</button>
+                                        <span class="sub-card-title" style="font-size:11px; font-weight:700; color:#fff;">🧠 Global Turn Guidelines</span>
+                                    </div>
+                                    <span class="guideline-count-badge" id="guidelines-count-badge" style="background:#161512; border:1px solid var(--card-border); color:#8b8987; border-radius:10px; font-size:10px; padding:1px 6px;">3 Rules</span>
+                                </div>
+                                <div class="sub-card-body" id="body-turn-guidelines" style="margin-top:6px;">
+                                    <div class="guidelines-list" id="turn-guidelines-list">
+                                        <!-- Populated dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Live AI Coach Commentary Log Feed (Turn-anchored async queue) -->
+                            <div class="sub-card-box" id="card-live-coach-feed">
+                                <div class="sub-card-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                        <span class="sub-card-title" style="font-size:11px; font-weight:700; color:#81b64c;">🤖 Live AI Coach Feed:</span>
+                                        <label class="toggle-option-inline" title="Check to enable automatic LLM analysis during gameplay">
+                                            <input type="checkbox" id="chk-auto-llm-analysis" checked>
+                                            <span>Auto LLM Analysis</span>
+                                        </label>
+                                        <button class="btn btn-xs btn-accent" id="btn-get-mentor-comment" title="Trigger one live AI Mentor analysis request for current board position independent of auto-mentoring" style="padding:2px 8px; font-size:10px;">🎓 Get Comment</button>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <div class="font-size-widget" title="Adjust mentor box font size">
+                                            <span class="widget-label">Font:</span>
+                                            <button class="font-btn" id="btn-feed-font-dec" title="Decrease Font Size">A-</button>
+                                            <span class="font-size-indicator" id="feed-font-size-label">13px</span>
+                                            <button class="font-btn" id="btn-feed-font-inc" title="Increase Font Size">A+</button>
+                                        </div>
+                                        <button class="btn btn-xs btn-secondary" id="btn-clear-coach-feed" title="Clear all mentor comments from live feed" style="padding:2px 6px; font-size:10px;">🧹 Clear All</button>
+                                        <span class="coaching-status-badge" id="coaching-status-badge" style="background:#161512; border:1px solid var(--card-border); color:#81b64c; border-radius:10px; font-size:10px; padding:1px 6px;">Standby</span>
+                                    </div>
+                                </div>
+                                <div class="live-coach-log-list" id="live-coach-log-list" style="max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+                                    <div class="empty-coaching-placeholder" style="font-size:11px; color:#8b8987; font-style:italic; padding:6px 0;">
+                                        Live AI Coach commentary will appear here automatically every <span id="coaching-interval-indicator">2</span> moves as you play...
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Tab 2: AI Mentor (NotebookLM) -->
+                <!-- Right Tab 2: Interactive AI Mentor Chat & NotebookLM Workspace -->
                 <div class="tab-content" id="tab-mentor">
-                    <!-- Account & NotebookLM Login / Selector Card (Collapsible) -->
-                    <div class="info-card account-card" id="account-card">
-                        <div class="card-header clickable" id="account-card-header" title="Click to collapse / expand account settings">
+                    <!-- 1. Account & NotebookLM Login / Selector Card (Collapsible, Collapsed by default) -->
+                    <div class="info-card account-card collapsible-card collapsed" id="account-card">
+                        <div class="card-header clickable" id="account-card-header"
+                            title="Click to collapse / expand account settings">
                             <div class="header-title-group">
-                                <button class="collapse-btn" id="btn-toggle-account" title="Minimize/Expand Account Settings">▼</button>
+                                <button class="collapse-btn" id="btn-toggle-account"
+                                    title="Minimize/Expand Account Settings">▼</button>
                                 <span class="card-title">🔐 Account & NotebookLM</span>
                             </div>
                             <span class="account-auth-tag red" id="account-auth-tag">Not Logged In</span>
                         </div>
-                        
-                        <div class="account-card-body" id="account-card-body">
+
+                        <div class="account-card-body card-collapsible-body" id="account-card-body" style="margin-top:8px;">
                             <!-- Account Action Buttons -->
                             <div class="account-action-btns">
-                                <button class="btn btn-sm btn-primary" id="btn-login-fresh" title="Opens fresh browser sign-in for Google Email & Password">🔑 Sign In to Google</button>
-                                <button class="btn btn-sm btn-secondary" id="btn-import-cookies" title="Import Session Cookies JSON">📋 Import Cookies</button>
-                                <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm" title="Logout current Google Account">🚪 Logout</button>
+                                <button class="btn btn-sm btn-primary" id="btn-login-fresh"
+                                    title="Opens fresh browser sign-in for Google Email & Password">🔑 Sign In to
+                                    Google</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-import-cookies"
+                                    title="Import Session Cookies JSON">📋 Import Cookies</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-logout-notebooklm"
+                                    title="Logout current Google Account">🚪 Logout</button>
                             </div>
 
                             <!-- Notebook Selector Row -->
                             <div class="notebook-select-header">
                                 <span class="mode-label">Select Mentor Notebook:</span>
-                                <button class="btn btn-sm btn-secondary" id="btn-refresh-notebooks" title="Refresh Notebooks List">🔄 Refresh</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-refresh-notebooks"
+                                    title="Refresh Notebooks List">🔄 Refresh</button>
                             </div>
                             <select id="mentor-notebook-select" class="notebook-select">
                                 <option value="">Loading notebooks...</option>
@@ -150,70 +476,71 @@
                         </div>
                     </div>
 
-                    <!-- Custom Question Input Box with Quick Tutor Insights Header Chips -->
-                    <div class="info-card mentor-card-50" id="card-ask-mentor">
-                        <div class="card-header-bar">
-                            <span class="card-title">Ask your AI Mentor</span>
-                            <div class="quick-chip-container">
-                                <button class="quick-chip" id="btn-explain-pos" title="Paste 'Explain Position' prompt into textarea">💡 Explain</button>
-                                <button class="quick-chip" id="btn-why-best" title="Paste 'Why Best Move?' prompt into textarea">🎯 Why Best?</button>
-                                <button class="quick-chip" id="btn-strategic-plan" title="Paste 'Strategic Goals' prompt into textarea">🗺️ Goals</button>
-                                <button class="quick-chip" id="btn-blunder-check" title="Paste 'Blunder Check' prompt into textarea">🛡️ Blunder</button>
+                    <!-- 2. Full-Height AI Mentor Chat Card (Stretches to fill remaining space) -->
+                    <div class="info-card mentor-chat-card flex-grow" id="card-mentor-chat">
+                        <!-- Chat Header with Title, Provider Badge, Font Size Widget & Clear -->
+                        <div class="mentor-chat-header">
+                            <div class="chat-header-title">
+                                <span class="chat-title-icon">💬</span>
+                                <span class="card-title">AI Mentor Chat</span>
+                                <span class="provider-badge" id="mentor-provider-badge">NotebookLM / Local</span>
+                            </div>
+                            <div class="chat-header-actions">
+                                <div class="font-size-widget" title="Adjust chat text font size">
+                                    <span class="widget-label">Font:</span>
+                                    <button class="font-btn" id="btn-font-dec" title="Decrease Font Size">A-</button>
+                                    <span class="font-size-indicator" id="font-size-label">13px</span>
+                                    <button class="font-btn" id="btn-font-inc" title="Increase Font Size">A+</button>
+                                </div>
+                                <button class="btn btn-xs btn-secondary" id="btn-clear-chat" title="Clear chat history">🧹 Clear</button>
                             </div>
                         </div>
 
-                        <!-- Translation Mode Switcher -->
-                        <div class="mode-switcher-container">
-                            <span class="mode-label">Translator Mode:</span>
-                            <label class="toggle-option">
-                                <input type="radio" name="translator-mode" value="human" checked>
-                                <span>Deterministic (Humanized)</span>
-                            </label>
-                            <label class="toggle-option">
-                                <input type="radio" name="translator-mode" value="raw_fen">
-                                <span>Raw FEN Mode</span>
-                            </label>
+                        <!-- Quick Prompts Bar & Translator Mode -->
+                        <div class="mentor-tools-bar">
+                            <div class="quick-chip-container">
+                                <button class="quick-chip" id="btn-explain-pos" title="Ask AI Mentor to explain position">💡 Explain</button>
+                                <button class="quick-chip" id="btn-why-best" title="Ask why best move is recommended">🎯 Why Best?</button>
+                                <button class="quick-chip" id="btn-strategic-plan" title="Ask for long-term strategic goals">🗺️ Goals</button>
+                                <button class="quick-chip" id="btn-blunder-check" title="Check position for blunders">🛡️ Blunder</button>
+                                <button class="quick-chip" id="btn-position-quiz" title="Generate interactive tactical position quiz">🧩 Quiz</button>
+                            </div>
+                            <div class="mode-switcher-container">
+                                <span class="mode-label">Mode:</span>
+                                <label class="toggle-option">
+                                    <input type="radio" name="translator-mode" value="human" checked>
+                                    <span>Humanized</span>
+                                </label>
+                                <label class="toggle-option">
+                                    <input type="radio" name="translator-mode" value="raw_fen">
+                                    <span>Raw FEN</span>
+                                </label>
+                            </div>
                         </div>
 
-                        <div class="custom-query-box">
-                            <textarea id="mentor-custom-question" placeholder="e.g. What are Black's main strategic plans in this pawn structure? Why is my knight on f3 key? (Click prompt chips above to paste)"></textarea>
-                            <button class="btn btn-accent" id="btn-ask-mentor">🚀 Send Query to NotebookLM</button>
+                        <!-- Scrollable Message Chat Container -->
+                        <div class="mentor-chat-messages font-md" id="mentor-chat-messages">
+                            <!-- Initial Welcome Bubble -->
+                            <div class="chat-bubble mentor-bubble">
+                                <div class="bubble-header">
+                                    <span class="bubble-avatar">🎓</span>
+                                    <span class="bubble-author">AI Mentor</span>
+                                    <span class="bubble-tag">NotebookLM Standby</span>
+                                    <button class="btn-delete-bubble" title="Clear this comment block">✖</button>
+                                </div>
+                                <div class="bubble-content">
+                                    <p>Hello! I am your AI Chess Mentor connected to your NotebookLM chess library. Ask me any question about the position, long-term plans, or tactical motifs, or click one of the quick prompt chips above! ♟️</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chat Input Box & Send Bar -->
+                        <div class="mentor-chat-input-row">
+                            <textarea id="mentor-custom-question" rows="4"
+                                placeholder="Ask your mentor a question... (Enter to send, Shift+Enter for new line)"></textarea>
+                            <button class="btn btn-accent send-chat-btn" id="btn-ask-mentor">🚀 Send</button>
                         </div>
                     </div>
-
-                    <!-- Mentor Explanation Output Container -->
-                    <div class="info-card mentor-card-50 flex-grow" id="card-mentor-output">
-                        <div class="mentor-output-header">
-                            <span class="card-title">Mentor Explanation</span>
-                            <span class="provider-badge" id="mentor-provider-badge">NotebookLM / Local</span>
-                        </div>
-                        <div class="mentor-response-area" id="mentor-response-area">
-                            <p class="placeholder-text">Click a quick prompt chip or type a question to receive deep strategic advice from your uploaded chess books notebook.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tab 3: Settings -->
-                <div class="tab-content" id="tab-settings">
-                    <div class="info-card">
-                        <div class="card-title">NotebookLM Connection</div>
-                        <div class="form-group">
-                            <label for="setting-notebook-id">Google NotebookLM Notebook ID</label>
-                            <input type="text" id="setting-notebook-id" placeholder="e.g. 1a2b3c4d-5e6f-7g8h...">
-                            <small>Find your Notebook ID in the NotebookLM browser URL or select it from the dropdown in the AI Mentor tab.</small>
-                        </div>
-                    </div>
-
-                    <div class="info-card">
-                        <div class="card-title">Stockfish Engine Path</div>
-                        <div class="form-group">
-                            <label for="setting-stockfish-path">Local Executable Path (Optional)</label>
-                            <input type="text" id="setting-stockfish-path" placeholder="e.g. C:\stockfish\stockfish.exe">
-                            <small>If left blank, the application will use Lichess Cloud Analysis API automatically.</small>
-                        </div>
-                    </div>
-
-                    <button class="btn btn-primary" id="btn-save-settings">💾 Save Configuration</button>
                 </div>
             </section>
         </main>
@@ -227,8 +554,10 @@
                 <button class="modal-close" id="btn-close-cookies-modal">✕</button>
             </div>
             <div class="modal-body">
-                <p>Paste your Google Cookie JSON (from <code>notebooklm auth export</code> or browser cookie extension):</p>
-                <textarea id="cookies-json-input" placeholder='[{"name": "SID", "value": "..."}, {"name": "HSID", "value": "..."}]'></textarea>
+                <p>Paste your Google Cookie JSON (from <code>notebooklm auth export</code> or browser cookie extension):
+                </p>
+                <textarea id="cookies-json-input"
+                    placeholder='[{"name": "SID", "value": "..."}, {"name": "HSID", "value": "..."}]'></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-cancel-cookies">Cancel</button>
@@ -237,6 +566,813 @@
         </div>
     </div>
 
+    <!-- ⚡ New Game Setup Modal -->
+    <div id="new-game-modal" class="modal-overlay hidden">
+        <div class="modal-content new-game-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>⚡ Start New Game</h3>
+                <button class="modal-close" id="btn-close-new-game-modal">✕</button>
+            </div>
+            <div class="modal-body new-game-modal-body" style="display:flex; flex-direction:column; gap:14px; padding:16px 20px;">
+                <!-- Player 1 Setup -->
+                <div class="player-setup-card" style="background:#161512; border:1px solid var(--card-border); border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; color:var(--accent-color); font-size:13px;">👤 Player 1 (You / Primary)</span>
+                        <div class="radio-toggle-group">
+                            <label class="toggle-option">
+                                <input type="radio" name="ng-p1-type" value="human" checked>
+                                <span>🧑 Human</span>
+                            </label>
+                            <label class="toggle-option">
+                                <input type="radio" name="ng-p1-type" value="bot">
+                                <span>🤖 Bot</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="ng-p1-bot-controls" class="hidden" style="margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px;">
+                            <span>Bot Strength:</span>
+                            <strong id="ng-p1-difficulty-label" style="color:var(--accent-color);">Level 10 (~1800 ELO)</strong>
+                        </div>
+                        <input type="range" id="ng-p1-difficulty-slider" min="0" max="20" value="10" class="difficulty-slider" style="width:100%;">
+                    </div>
+                </div>
+
+                <!-- Player 2 Setup -->
+                <div class="player-setup-card" style="background:#161512; border:1px solid var(--card-border); border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; color:#81b64c; font-size:13px;">🤖 Player 2 (Opponent)</span>
+                        <div class="radio-toggle-group">
+                            <label class="toggle-option">
+                                <input type="radio" name="ng-p2-type" value="human">
+                                <span>🧑 Human</span>
+                            </label>
+                            <label class="toggle-option">
+                                <input type="radio" name="ng-p2-type" value="bot" checked>
+                                <span>🤖 Bot</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="ng-p2-bot-controls" style="margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px;">
+                            <span>Bot Strength:</span>
+                            <strong id="ng-p2-difficulty-label" style="color:#81b64c;">Level 10 (~1800 ELO)</strong>
+                        </div>
+                        <input type="range" id="ng-p2-difficulty-slider" min="0" max="20" value="10" class="difficulty-slider" style="width:100%;">
+                    </div>
+                </div>
+
+                <!-- Auto-Adjust Bot Difficulty Card -->
+                <div class="auto-adjust-card" style="background:#161512; border:1px solid var(--card-border); border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:700; font-size:13px; color:#fff;">🤖 Auto-Adjust Bot Strength</div>
+                            <small style="color:#8b8987; font-size:10px;">Match Stockfish engine to active profile rating (<span id="ng-auto-adjust-profile-elo-text">1500 ELO</span>)</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="ng-toggle-auto-adjust-difficulty">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    <div id="ng-auto-adjust-bias-container" class="hidden" style="margin-top:10px; display:flex; flex-direction:column; gap:4px;">
+                        <span style="font-size:11px; color:#c9c8c5;">Difficulty Challenge Tier:</span>
+                        <select id="ng-select-auto-adjust-bias" class="setting-select" style="width:100%; font-size:12px; padding:6px; background:#0e0d0b; border:1px solid var(--card-border); border-radius:6px; color:#fff;">
+                            <option value="easy">🟢 Easy (Target ~150 ELO below profile)</option>
+                            <option value="medium" selected>🟡 Medium (Match active profile ELO)</option>
+                            <option value="hard">🟠 Hard (Target ~150 ELO above profile)</option>
+                            <option value="nightmare">🔴 Nightmare (Target ~350+ ELO above profile)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Side / Color Assignment -->
+                <div class="color-assignment-card" style="background:#161512; border:1px solid var(--card-border); border-radius:8px; padding:12px;">
+                    <div style="font-weight:700; font-size:13px; color:#fff; margin-bottom:8px;">🎨 Side Assignment (Player 1 Color)</div>
+                    <div class="segmented-color-selector" style="display:flex; gap:8px;">
+                        <label class="color-select-btn" style="flex:1; text-align:center; padding:8px 4px; background:#0e0d0b; border:1px solid var(--card-border); border-radius:6px; cursor:pointer; font-size:12px;">
+                            <input type="radio" name="ng-color-assignment" value="white">
+                            <span class="btn-label">⚪ White</span>
+                        </label>
+                        <label class="color-select-btn active" style="flex:1; text-align:center; padding:8px 4px; background:#0e0d0b; border:1px solid var(--card-border); border-radius:6px; cursor:pointer; font-size:12px;">
+                            <input type="radio" name="ng-color-assignment" value="random" checked>
+                            <span class="btn-label">🎲 Random (50/50)</span>
+                        </label>
+                        <label class="color-select-btn" style="flex:1; text-align:center; padding:8px 4px; background:#0e0d0b; border:1px solid var(--card-border); border-radius:6px; cursor:pointer; font-size:12px;">
+                            <input type="radio" name="ng-color-assignment" value="black">
+                            <span class="btn-label">⚫ Black</span>
+                        </label>
+                    </div>
+                    <small style="color:#8b8987; margin-top:6px; display:block; font-size:10px;">If set to Random, side is rolled fresh on every New Game / Reset!</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-new-game">Cancel</button>
+                <button class="btn btn-primary" id="btn-submit-new-game" style="font-weight:700;">🚀 Start Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Settings Modal -->
+    <div id="game-settings-modal" class="modal-overlay hidden">
+        <div class="modal-content game-settings-content">
+            <div class="modal-header">
+                <h3>⚙️ Game & Display Settings</h3>
+                <button class="modal-close" id="btn-close-game-settings">✕</button>
+            </div>
+            <div class="modal-body settings-modal-body">
+                <!-- 1. Score / Eval Bar Toggle -->
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Evaluation Score Bar</span>
+                        <small>Show/hide the vertical evaluation bar beside the board</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-score-bar" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- 2. Visual Hint Arrows (Separately for White & Black) -->
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">White Best Move Arrow</span>
+                        <small>Show Stockfish suggestion arrow when White is to move</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-arrow-white" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Black Best Move Arrow</span>
+                        <small>Show Stockfish suggestion arrow when Black is to move</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-arrow-black" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- Strategic Turn Guidelines & Subject Practice Displays -->
+                <div class="setting-row-block">
+                    <span class="setting-label">🧠 Turn Guidelines & Focus Practice Displays</span>
+                    <small style="color:#8b8987;">Show real-time mentor hints and tactical checklists during turn</small>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Show Turn Guidelines & Checklist</span>
+                        <small>Display turn-by-turn strategic reminders collected from game analysis</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-show-turn-guidelines" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">📜 Edit & Manage Turn Rules</span>
+                        <small>Open rule editor to add, update or delete active turn guidelines</small>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" id="btn-open-turn-rules-manager" style="font-size:11px; padding:4px 10px; flex-shrink:0;">📜 Manage Rules...</button>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Show Focus Subject Practice Advice</span>
+                        <small>Display live mentor instruction explaining position connection to practice subject</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-show-practice-subject" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Default Focus Subject</span>
+                        <small>Default theme for mentor live practice instructions</small>
+                    </div>
+                    <select id="setting-default-practice-subject" class="setting-select" style="background:#161512; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:12px;">
+                        <option value="auto">🤖 Auto (Mentor Prioritized)</option>
+                        <option value="loose_pieces">🛡️ Loose Pieces & Undefended Targets</option>
+                        <option value="king_safety">👑 King Safety & Escape Squares (Luft)</option>
+                        <option value="material_simplification">🎯 Material Advantage & Simplification</option>
+                        <option value="piece_activity">🏰 Piece Activity & Center Control</option>
+                        <option value="pawn_structure">♟️ Pawn Structure & Weak Squares</option>
+                    </select>
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- Positional Overlay Color Settings -->
+                <div class="setting-row-block">
+                    <span class="setting-label">🎨 Positional Board Overlay Colors</span>
+                    <small style="color:#8b8987;">Customize color overlays for White and Black outposts, weak holes, open files & loose targets</small>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">⚪ White Weakness / Weak Hole Color</span>
+                        <small>Square color for White's weak holes and weak targets</small>
+                    </div>
+                    <input type="color" id="setting-color-white-overlay" value="#3b82f6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">🏰 White Outpost / Strong Square</span>
+                        <small>Square color for White's outposts & key active squares</small>
+                    </div>
+                    <input type="color" id="setting-color-white-good" value="#10b981" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">⚫ Black Weakness / Weak Hole Color</span>
+                        <small>Square color for Black's weak holes and weak targets</small>
+                    </div>
+                    <input type="color" id="setting-color-black-overlay" value="#ef4444" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">🏰 Black Outpost / Strong Square</span>
+                        <small>Square color for Black's outposts & key active squares</small>
+                    </div>
+                    <input type="color" id="setting-color-black-good" value="#8b5cf6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- 2.5 Chess Clocks & Time Controls -->
+                <div class="setting-row-block">
+                    <span class="setting-label">⏱️ Chess Clock & Time Control Settings</span>
+                    <small style="color:#8b8987;">Configure independent player timers, odds time controls, and automated
+                        time loss</small>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Enable Chess Clocks</span>
+                        <small>Show digital clocks and enforce time limits during gameplay</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-enable-clocks">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Automate Loss on Time Flag</span>
+                        <small>End game automatically when a player's clock reaches 00:00</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-flag-automated-loss" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div id="time-control-options-container" class="setting-row-sub flex-column hidden">
+                    <!-- White Time Control -->
+                    <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%;">
+                        <span class="setting-label" style="font-size:12px; width:130px; flex-shrink:0;">⚪ White
+                            Time:</span>
+                        <select id="select-white-clock-preset" class="setting-select" style="flex:1;">
+                            <option value="untimed">♾️ Untimed / No Limit</option>
+                            <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
+                            <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
+                            <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
+                            <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
+                            <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
+                            <option value="custom">⚙️ Custom</option>
+                        </select>
+                    </div>
+                    <div id="custom-white-clock-container" class="custom-clock-inputs hidden"
+                        style="display:flex; gap:8px; width:100%; margin-top:4px;">
+                        <input type="number" id="input-white-clock-mins" min="1" max="180" value="5" placeholder="Mins"
+                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
+                        <input type="number" id="input-white-clock-inc" min="0" max="60" value="0" placeholder="Inc (s)"
+                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
+                    </div>
+
+                    <div style="border-top:1px solid var(--card-border); margin:6px 0; width:100%;"></div>
+
+                    <!-- Black Time Control -->
+                    <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%;">
+                        <span class="setting-label" style="font-size:12px; width:130px; flex-shrink:0;">⚫ Black
+                            Time:</span>
+                        <select id="select-black-clock-preset" class="setting-select" style="flex:1;">
+                            <option value="untimed">♾️ Untimed / No Limit</option>
+                            <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
+                            <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
+                            <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
+                            <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
+                            <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
+                            <option value="custom">⚙️ Custom</option>
+                        </select>
+                    </div>
+                    <div id="custom-black-clock-container" class="custom-clock-inputs hidden"
+                        style="display:flex; gap:8px; width:100%; margin-top:4px;">
+                        <input type="number" id="input-black-clock-mins" min="1" max="180" value="5" placeholder="Mins"
+                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
+                        <input type="number" id="input-black-clock-inc" min="0" max="60" value="0" placeholder="Inc (s)"
+                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
+                    </div>
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- 3. Player Movement Mode per Color & Difficulty -->
+                <div class="setting-row-block">
+                    <span class="setting-label">White Player Control</span>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="white-player-mode" value="manual" checked>
+                            <span>🧑 Manual (Player)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="white-player-mode" value="auto">
+                            <span>🤖 Auto (Computer)</span>
+                        </label>
+                    </div>
+                    <!-- White Difficulty Slider -->
+                    <div id="white-difficulty-container" class="difficulty-container">
+                        <div class="difficulty-header">
+                            <span class="difficulty-title">White Computer Strength:</span>
+                            <span id="white-difficulty-label" class="difficulty-badge">Intermediate (~1800 ELO)</span>
+                        </div>
+                        <input type="range" id="slider-white-difficulty" min="0" max="20" value="10" step="1"
+                            class="difficulty-slider">
+                    </div>
+                </div>
+
+                <div class="setting-row-block">
+                    <span class="setting-label">Black Player Control</span>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="black-player-mode" value="manual" checked>
+                            <span>🧑 Manual (Player)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="black-player-mode" value="auto">
+                            <span>🤖 Auto (Computer)</span>
+                        </label>
+                    </div>
+                    <!-- Black Difficulty Slider -->
+                    <div id="black-difficulty-container" class="difficulty-container">
+                        <div class="difficulty-header">
+                            <span class="difficulty-title">Black Computer Strength:</span>
+                            <span id="black-difficulty-label" class="difficulty-badge">Intermediate (~1800 ELO)</span>
+                        </div>
+                        <input type="range" id="slider-black-difficulty" min="0" max="20" value="10" step="1"
+                            class="difficulty-slider">
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">🤖 Auto-Adjust Computer Difficulty to Active Profile</span>
+                        <small>Automatically matches Stockfish engine strength to active profile rating (<span
+                                id="auto-adjust-profile-elo-text">1500 ELO</span>)</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-auto-adjust-difficulty">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div id="auto-adjust-bias-container" class="setting-row-sub hidden">
+                    <span class="setting-label" style="font-size:12px;">Difficulty Challenge Tier:</span>
+                    <select id="select-auto-adjust-bias" class="setting-select">
+                        <option value="easy">🟢 Easy (Target ~150 ELO below profile)</option>
+                        <option value="medium" selected>🟡 Medium (Match active profile ELO)</option>
+                        <option value="hard">🟠 Hard (Target ~150 ELO above profile)</option>
+                        <option value="nightmare">🔴 Nightmare (Target ~350+ ELO above profile)</option>
+                    </select>
+                </div>
+
+                <hr class="setting-divider">
+
+                <!-- 4. Board Edit Confirmation Alerts -->
+                <div class="setting-row-block">
+                    <span class="setting-label">✏️ Board Edit Warnings & Confirmations</span>
+                    <small style="color:#8b8987;">Configure confirmation alerts when modifying positions in Edit
+                        Mode</small>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Alert on Overriding Piece</span>
+                        <small>Ask confirmation before overriding a piece on a square</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-alert-override" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Alert on Removing Piece</span>
+                        <small>Ask confirmation before removing a piece from the board</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-alert-remove" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Alert on Setting Position in Check</span>
+                        <small>Warn when edited position puts active player in Check</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-alert-check" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Alert on Setting Position in Checkmate</span>
+                        <small>Warn when edited position results in Checkmate</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-alert-mate" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <span class="setting-label">Alert on Setting Position in Stalemate / Tie</span>
+                        <small>Warn when edited position results in Stalemate or Tie</small>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-alert-tie" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+
+
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-game-settings">Cancel</button>
+                <button class="btn btn-primary" id="btn-apply-game-settings">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game & FEN/PGN Manager Modal -->
+    <div id="game-manager-modal" class="modal-overlay hidden">
+        <div class="modal-content game-manager-content">
+            <div class="modal-header">
+                <h3>💾 Games, FEN & PGN Manager</h3>
+                <button class="modal-close" id="btn-close-game-manager">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Manager Subtabs -->
+                <div class="manager-subtabs">
+                    <button class="subtab-btn active" data-subtab="subtab-saved-games">💾 Saved Games</button>
+                    <button class="subtab-btn" data-subtab="subtab-fen">📋 FEN Import/Export</button>
+                    <button class="subtab-btn" data-subtab="subtab-pgn">📄 PGN Import/Export</button>
+                </div>
+
+                <!-- Subtab 1: Saved Games Library -->
+                <div class="subtab-content active" id="subtab-saved-games">
+                    <div class="save-game-form">
+                        <input type="text" id="save-game-title" placeholder="Game Title (e.g. Italian Game Session #1)">
+                        <input type="text" id="save-game-notes"
+                            placeholder="Notes (e.g. Practiced C50 line with Stockfish)">
+                        <button class="btn btn-accent" id="btn-save-current-game">💾 Save Current Game</button>
+                    </div>
+                    <hr class="setting-divider">
+                    <div class="saved-games-list-container">
+                        <span class="section-subtitle">Your Saved Games Library:</span>
+                        <div id="saved-games-list" class="saved-games-list">
+                            <p class="placeholder-text">No saved games yet. Save your current game above!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subtab 2: FEN Import / Export -->
+                <div class="subtab-content" id="subtab-fen">
+                    <div class="form-group">
+                        <label for="fen-input-text">Position FEN String:</label>
+                        <textarea id="fen-input-text"
+                            placeholder="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"></textarea>
+                    </div>
+                    <div class="manager-btn-row">
+                        <button class="btn btn-secondary" id="btn-copy-fen">📋 Copy Current FEN</button>
+                        <button class="btn btn-primary" id="btn-load-fen">📥 Load FEN onto Board</button>
+                    </div>
+                </div>
+
+                <!-- Subtab 3: PGN Import / Export -->
+                <div class="subtab-content" id="subtab-pgn">
+                    <div class="form-group">
+                        <label for="pgn-input-text">PGN Game Data (with Annotations & Headers):</label>
+                        <textarea id="pgn-input-text"
+                            placeholder="[Event &quot;Chess AI Mentor Game&quot;]..."></textarea>
+                    </div>
+                    <div class="manager-btn-row">
+                        <button class="btn btn-secondary" id="btn-generate-pgn">🔄 Generate PGN from Game</button>
+                        <button class="btn btn-secondary" id="btn-copy-pgn">📋 Copy PGN</button>
+                        <button class="btn btn-secondary" id="btn-download-pgn">💾 Download .pgn File</button>
+                        <button class="btn btn-primary" id="btn-load-pgn">📥 Load PGN Game</button>
+                    </div>
+                    <div class="file-upload-box">
+                        <label for="pgn-file-input" class="file-upload-label">📂 Upload .pgn File from Computer</label>
+                        <input type="file" id="pgn-file-input" accept=".pgn,.txt" class="hidden-file-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Profile & Skill Matrix Modal -->
+    <div id="user-profile-modal" class="modal-overlay hidden">
+        <div class="modal-content profile-modal-content">
+                        <div class="modal-header">
+                            <h3>👤 User Profile & Skill Matrix</h3>
+                            <button class="modal-close" id="btn-close-profile-modal">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Active Profile Summary Card -->
+                            <div class="active-profile-summary-card">
+                                <div class="profile-main-info">
+                                    <div class="profile-big-avatar">👤</div>
+                                    <div class="profile-name-details">
+                                        <h4 id="profile-card-name">Player</h4>
+                                        <span class="profile-tier-badge" id="profile-card-tier">Intermediate
+                                            (~1500)</span>
+                                    </div>
+                                </div>
+                                <div class="profile-elo-stats">
+                                    <div class="elo-stat-box">
+                                        <span class="elo-stat-label">Estimated ELO</span>
+                                        <span class="elo-stat-value" id="profile-card-elo">1500</span>
+                                    </div>
+                                    <div class="elo-stat-box">
+                                        <span class="elo-stat-label">Games Tracked</span>
+                                        <span class="elo-stat-value" id="profile-card-games">0</span>
+                                    </div>
+                                    <div class="elo-stat-box">
+                                        <span class="elo-stat-label">W / D / L Record</span>
+                                        <span class="elo-stat-value" id="profile-card-record">0W - 0D - 0L</span>
+                                    </div>
+                                    <div class="elo-stat-box">
+                                        <span class="elo-stat-label">Win Rate</span>
+                                        <span class="elo-stat-value" id="profile-card-winrate">0%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Subtabs -->
+                            <div class="manager-subtabs">
+                                <button class="subtab-btn active" data-profile-tab="tab-skills">📊 Concept Skill
+                                    Breakdown</button>
+                                <button class="subtab-btn" data-profile-tab="tab-conversions">🌐 System Rating
+                                    Conversions</button>
+                                <button class="subtab-btn" data-profile-tab="tab-profiles">⚙️ Switch / Manage
+                                    Profiles</button>
+                            </div>
+
+                            <!-- Tab 1: Concept Skill Breakdown -->
+                            <div class="profile-tab-content active" id="tab-skills">
+                                <div class="skills-grid" id="profile-skills-grid">
+                                    <!-- Populated dynamically via JS -->
+                                </div>
+                            </div>
+
+                            <!-- Tab 2: Rating Conversions -->
+                            <div class="profile-tab-content" id="tab-conversions">
+                                <div class="conversions-grid" id="profile-conversions-grid">
+                                    <!-- Populated dynamically via JS -->
+                                </div>
+                            </div>
+
+                            <!-- Tab 3: Switch / Manage Profiles -->
+                            <div class="profile-tab-content" id="tab-profiles">
+                                <div class="create-profile-form">
+                                    <span class="section-subtitle">➕ Create New User Profile:</span>
+                                    <div class="form-row">
+                                        <input type="text" id="new-profile-name"
+                                            placeholder="Profile Name (e.g. Alex, Master Prep)">
+                                        <select id="new-profile-starting-elo">
+                                            <option value="1000">Beginner (~1000 ELO)</option>
+                                            <option value="1500" selected>Casual / Intermediate (~1500 ELO)</option>
+                                            <option value="1800">Advanced (~1800 ELO)</option>
+                                            <option value="2200">Expert / Master (~2200 ELO)</option>
+                                        </select>
+                                        <button class="btn btn-accent" id="btn-create-profile">Create Profile</button>
+                                    </div>
+                                    <div class="placement-test-banner">
+                                        <span>Unsure of your rating? Let the AI Mentor test your skills!</span>
+                                        <button class="btn btn-secondary btn-sm" id="btn-start-placement-test">🎯 Take
+                                            AI Placement Test</button>
+                                    </div>
+                                </div>
+                                <hr class="setting-divider">
+                                <div class="profiles-list-container">
+                                    <span class="section-subtitle">Switch Active Profile:</span>
+                                    <div id="profiles-list" class="profiles-list">
+                                        <!-- List of profiles rendered dynamically -->
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Mentor Placement Test Modal -->
+                <div id="placement-test-modal" class="modal-overlay hidden">
+                    <div class="modal-content placement-modal-content">
+                        <div class="modal-header">
+                            <h3>🎯 AI Mentor Diagnostic Placement Test & Quiz</h3>
+                            <div class="quiz-header-right">
+                                <select id="select-quiz-font-size" class="quiz-font-select" title="Change Quiz Font Size">
+                                    <option value="font-normal">🔤 Normal Text</option>
+                                    <option value="font-large" selected>🔤 Large Text</option>
+                                    <option value="font-xlarge">🔤 Extra Large Text</option>
+                                </select>
+                                <button class="modal-close" id="btn-close-placement-modal">✕</button>
+                            </div>
+                        </div>
+                        <div class="modal-body">
+                            <div class="placement-progress-bar">
+                                <span id="placement-question-step">Question 1 of 3</span>
+                                <div class="progress-track">
+                                    <div id="placement-progress-fill" class="progress-fill" style="width: 33%;"></div>
+                                </div>
+                            </div>
+
+                            <div id="placement-question-container" class="placement-question-box">
+                                <!-- Populated dynamically by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Full Game Analysis & AI Coach Report Modal -->
+                <div id="game-analysis-modal" class="modal-overlay hidden">
+                    <div class="modal-content analysis-modal-content">
+                        <div class="modal-header">
+                            <h3>🔍 Full Post-Game Analysis & AI Coach Report</h3>
+                            <button class="modal-close" id="btn-close-analysis-modal">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Accuracy & Metrics Overview Bar -->
+                            <div class="accuracy-overview-bar">
+                                <div class="accuracy-card white-acc">
+                                    <span class="acc-side">⚪ White Accuracy</span>
+                                    <span class="acc-val" id="analysis-white-acc">--%</span>
+                                </div>
+                                <div class="accuracy-card black-acc">
+                                    <span class="acc-side">⚫ Black Accuracy</span>
+                                    <span class="acc-val" id="analysis-black-acc">--%</span>
+                                </div>
+                            </div>
+
+                            <!-- Move Category Breakdown Stats -->
+                            <div class="category-breakdown-row" id="analysis-category-counts">
+                                <!-- Populated dynamically via JS -->
+                            </div>
+
+                            <!-- AI Coach Post-Game Report -->
+                            <div class="info-card coach-report-card">
+                                <div class="card-title">🎓 AI Coach Post-Game Summary</div>
+                                <div class="mentor-response-area" id="analysis-coach-report">
+                                    <p class="placeholder-text">Click "Run Full Analysis" below to calculate
+                                        move classifications and AI coach feedback.</p>
+                                </div>
+                            </div>
+
+                            <!-- Move-by-Move Evaluation Timeline Table -->
+                            <div class="info-card">
+                                <div class="card-title">📜 Move-by-Move Evaluation Timeline</div>
+                                <div class="analysis-table-container">
+                                    <table class="move-table analysis-table">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Side</th>
+                                                <th>Move</th>
+                                                <th>Classification</th>
+                                                <th>Engine Eval</th>
+                                                <th>Top Rec</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="analysis-timeline-tbody">
+                                            <tr>
+                                                <td colspan="6" class="placeholder-text">No analysis
+                                                    generated yet.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-primary" id="btn-run-full-game-analysis">⚡ Run Full Game
+                                Analysis</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Opening Book Explorer Modal -->
+                <div id="opening-explorer-modal" class="modal-overlay hidden">
+                    <div class="modal-content opening-modal-content">
+                        <div class="modal-header">
+                            <h3>📖 Interactive Opening Book Explorer</h3>
+                            <button class="modal-close" id="btn-close-opening-modal">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="opening-banner-card">
+                                <div class="opening-title-row">
+                                    <span class="eco-code-badge" id="opening-modal-eco">ECO C60</span>
+                                    <h4 id="opening-modal-title">Ruy Lopez (Spanish Opening)</h4>
+                                </div>
+                                <p id="opening-modal-desc" class="opening-description-text">
+                                    Opening description...
+                                </p>
+                            </div>
+
+                            <div class="info-card">
+                                <div class="card-title">🌳 Main Move Continuations & Win Rate Statistics
+                                </div>
+                                <div id="opening-continuations-list" class="opening-continuations-grid">
+                                    <!-- Populated dynamically by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Guideline Modal -->
+    <div id="add-guideline-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>➕ Add Turn Guideline from Game Analysis</h3>
+                <button class="modal-close" id="btn-close-guideline-modal">✕</button>
+            </div>
+            <div class="modal-body" style="display:flex; flex-direction:column; gap:12px;">
+                <div class="form-group" style="display:flex; flex-direction:column; gap:4px;">
+                    <label for="guideline-title-input" style="font-size:12px; font-weight:600; color:#8b8987;">Rule Name / Title:</label>
+                    <input type="text" id="guideline-title-input" placeholder="e.g. 🛡️ The 'Loose Piece Alert' Check" style="background:#161512; border:1px solid var(--card-border); padding:8px 12px; color:#fff; border-radius:6px; font-size:13px;">
+                </div>
+                <div class="form-group" style="display:flex; flex-direction:column; gap:4px;">
+                    <label for="guideline-category-select" style="font-size:12px; font-weight:600; color:#8b8987;">Category / Focus Theme:</label>
+                    <select id="guideline-category-select" class="setting-select" style="background:#161512; border:1px solid var(--card-border); padding:8px 12px; color:#fff; border-radius:6px; font-size:13px;">
+                        <option value="Tactics">🛡️ Tactics & Piece Alert</option>
+                        <option value="King Safety">👑 King Safety & Luft</option>
+                        <option value="Strategy">🎯 Strategy & Simplification</option>
+                        <option value="Opening">♟️ Opening & Outposts</option>
+                        <option value="Endgame">🏰 Endgame Technique</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display:flex; flex-direction:column; gap:4px;">
+                    <label for="guideline-text-input" style="font-size:12px; font-weight:600; color:#8b8987;">Rule Explanation / Turn Action:</label>
+                    <textarea id="guideline-text-input" placeholder="Before finalizing any move, ask: 'Is any piece left unguarded?' If you see an unprotected piece, verify it isn't under threat..." style="background:#161512; border:1px solid var(--card-border); padding:8px 12px; color:#fff; border-radius:6px; font-size:13px; min-height:80px; font-family:inherit;"></textarea>
+                </div>
+                <div class="form-group" style="display:flex; flex-direction:column; gap:4px;">
+                    <label for="guideline-citation-input" style="font-size:12px; font-weight:600; color:#8b8987;">Analysis Reference / Move Note (Optional):</label>
+                    <input type="text" id="guideline-citation-input" placeholder="e.g. [1, 5] or [Game vs Bot, move 39]" style="background:#161512; border:1px solid var(--card-border); padding:8px 12px; color:#fff; border-radius:6px; font-size:13px;">
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                <button class="btn btn-secondary" id="btn-cancel-guideline">Cancel</button>
+                <button class="btn btn-primary" id="btn-save-guideline">💾 Save Guideline</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pawn Promotion Choice Modal -->
+    <div id="pawn-promotion-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:360px; text-align:center; padding:20px;">
+            <div class="modal-header" style="justify-content:center; margin-bottom:8px;">
+                <h3 style="font-size:16px;">♟️ Choose Promotion Piece</h3>
+            </div>
+            <p style="font-size:12px; color:#8b8987; margin-bottom:16px;">Select the piece you want to promote your pawn into:</p>
+            <div id="promotion-piece-grid" style="display:flex; justify-content:center; gap:12px; margin-bottom:16px;"></div>
+            <div style="display:flex; justify-content:center;">
+                <button class="btn btn-sm btn-secondary" id="btn-cancel-promotion">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
+
 </html>
