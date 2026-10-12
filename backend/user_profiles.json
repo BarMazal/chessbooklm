@@ -1,0 +1,67 @@
+{
+  "prof_default": {
+    "id": "prof_default",
+    "name": "Player",
+    "elo": 1500,
+    "starting_elo": 1500,
+    "estimated_elo": 1500,
+    "tier": "Intermediate (~1500 ELO)",
+    "is_qa": false,
+    "gamesPlayed": 12,
+    "wins": 7,
+    "draws": 2,
+    "losses": 3
+  },
+  "prof_qa_tester": {
+    "id": "prof_qa_tester",
+    "name": "QA Tester Profile",
+    "elo": 1680,
+    "starting_elo": 1680,
+    "estimated_elo": 1680,
+    "tier": "Advanced (~1680 ELO)",
+    "is_qa": true,
+    "gamesPlayed": 52,
+    "wins": 31,
+    "draws": 7,
+    "losses": 14
+  },
+  "prof_tactical": {
+    "id": "prof_tactical",
+    "name": "Tactical Specialist",
+    "elo": 1720,
+    "starting_elo": 1720,
+    "estimated_elo": 1720,
+    "tier": "Advanced (~1720 ELO)",
+    "is_qa": false,
+    "gamesPlayed": 40,
+    "wins": 25,
+    "draws": 5,
+    "losses": 10
+  },
+  "prof_positional": {
+    "id": "prof_positional",
+    "name": "Positional Strategist",
+    "elo": 1640,
+    "starting_elo": 1640,
+    "estimated_elo": 1640,
+    "tier": "Advanced (~1640 ELO)",
+    "is_qa": false,
+    "gamesPlayed": 35,
+    "wins": 20,
+    "draws": 8,
+    "losses": 7
+  },
+  "prof_endgame": {
+    "id": "prof_endgame",
+    "name": "Endgame Master",
+    "elo": 1790,
+    "starting_elo": 1790,
+    "estimated_elo": 1790,
+    "tier": "Master Candidate (~1790 ELO)",
+    "is_qa": false,
+    "gamesPlayed": 48,
+    "wins": 32,
+    "draws": 6,
+    "losses": 10
+  }
+}

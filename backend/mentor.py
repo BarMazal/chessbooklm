@@ -265,7 +265,10 @@ class MentorService:
         """
         try:
             cmd = self._build_cmd("ask", "-n", notebook_id, "--json", prompt)
-            print(f"[MentorService] Running ask command: {' '.join(cmd)}")
+            try:
+                print(f"[MentorService] Running ask command: {prompt[:60]}...")
+            except Exception:
+                pass
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=subprocess.PIPE,

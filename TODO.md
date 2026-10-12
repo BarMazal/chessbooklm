@@ -92,3 +92,36 @@ This document tracks completed features, active capabilities, and planned future
 
 - [ ] Concept-Based Skill Breakdown additions
 - Passed pawns, time stress (ELO under Blitz and such)
+
+---
+
+## 🚀 Future Backlog & Architectural Roadmap
+
+### 1. Board Material & Random Tile Texture Engine
+- [ ] **Unified Material Libraries**: Curated material image sets (Wood, Glass, Marble, Metal) calibrated to uniform brightness levels.
+- [ ] **Per-Square Random Texture Assignment**: Randomly pick texture tiles per square from the active material library for realistic surface variations.
+- [ ] **Color Modulation Pipeline**: Seamless blending of custom light/dark square colors with material textures via CSS blend modes (`soft-light`, `multiply`, `overlay`).
+
+### 2. Piece Material, Form & Color Customization Engine
+- [ ] **Multi-Form Vector Sets**: Comprehensive 2D and 3D SVG piece set forms.
+- [ ] **Custom Piece Color Palette**: Custom primary and secondary color selection per piece set.
+- [ ] **Piece Material Overlay Library**: Material selection (Glass, Marble, Wood, Metal) with optional per-piece random texture selection.
+- [ ] **SVG Material Modulation Pipeline**: Direct color and texture modulation applied cleanly over 2D and 3D piece vector shapes.
+
+### 3. Theme Presets & Custom User Theme Manager
+- [ ] **Curated Theme Presets**: Pre-configured combinations of board colors, materials, piece forms, and piece materials with creative preset names.
+- [ ] **Custom User Theme Creator**: Allow users to save their current custom board & piece configuration with a custom name, store in `localStorage`, and manage/switch custom themes easily.
+
+
+### 4. Comprehensive Board & Piece Appearance Definition Engine (High Priority Backlog)
+- [ ] **Board Appearance Customization System**:
+  - **Two-Side Color Selection**: Allow users to explicitly choose custom colors for the two sides (light and dark squares).
+  - **Optional Material Texture Overlay**: Enable optional material texture selection over chosen colors.
+  - **Texture Color Modulation Pipeline**: Properly modulate square colors by active material textures (fixing Lichess textures and custom tile color blend pipelines).
+  - **2D / 3D Board Display Modes**: Support switching between 2D flat layout and 3D perspective views.
+- [ ] **Piece Appearance Customization System**:
+  - **Color Selection Flexibility**: Allow users to pick custom piece colors, use default piece set colors, or match the selected board colors.
+  - **Material Texture Modulation**: Apply material texture libraries to modulate piece colors.
+  - **2D / 3D Piece Shapes & Color Fixes**: Support 2D and 3D piece models, ensuring all piece shape selections display correct custom colors.
+  - **Piece Aura & Material Definitions**: Support configurable piece aura / glow effects either standalone or integrated as part of material definitions.
+  - **Texture Library Architecture**: Expand and organize material textures into reusable libraries for both boards and pieces.

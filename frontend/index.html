@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2.2">
 </head>
 
 <body>
@@ -31,6 +31,8 @@
                     <span id="header-profile-name">Player</span>
                     <span class="profile-elo-tag" id="header-profile-elo">1500 ELO</span>
                 </div>
+                <button class="btn btn-sm btn-accent" id="header-btn-analytics" style="padding:4px 10px; font-size:12px; font-weight:600; border:1px solid #eab308; background:#854d0e; color:#fef08a; cursor:pointer;" title="Open Advanced Profile Analytics & Adaptive Exercises">📊 Advanced Analytics</button>
+
                 <div class="status-badge" id="engine-status-badge">
                     <span class="status-dot green"></span>
                     <span id="engine-status-text">Engine Ready</span>
@@ -116,7 +118,15 @@
                 </div>
 
                 <!-- Left Tab 2: Settings -->
+                                <!-- Left Tab 4: App & Visual Customization Settings -->
                 <div class="tab-content" id="tab-settings">
+                    <div class="info-card" style="border: 2px solid var(--accent-color); background: #1e1c18;">
+                        <div class="card-title" style="color:var(--accent-color); font-weight:bold; font-size:14px;">🎨 Board, Piece Sets & Audio Customization</div>
+                        <p style="font-size:11px; color:#a8a5a0; margin-bottom:10px;">Select from 23 vector & 3D piece sets, 11 Lichess board textures, surface finishes, custom square colors, and sound FX.</p>
+                        <button type="button" class="btn btn-primary" id="btn-sidebar-open-appearance-suite" onclick="document.getElementById('game-settings-modal').classList.remove('hidden'); if(typeof renderSettingsPreviewBoard==='function') renderSettingsPreviewBoard();" style="width:100%; font-weight:bold; font-size:12px; padding:8px;">
+                            🎨 Customize Board, Pieces & Audio...
+                        </button>
+                    </div>
                     <div class="info-card">
                         <div class="card-title">🤖 Live AI Coach & LLM Auto-Analysis</div>
                         <div class="form-group" style="margin-bottom:12px;">
@@ -673,362 +683,559 @@
     </div>
 
     <!-- Game Settings Modal -->
+        <!-- Game & Visual Customization Suite Modal -->
+        <!-- Game & Visual Customization Suite Modal -->
+        <!-- Game & Visual Customization Suite Modal -->
     <div id="game-settings-modal" class="modal-overlay hidden">
         <div class="modal-content game-settings-content">
             <div class="modal-header">
-                <h3>⚙️ Game & Display Settings</h3>
+                <h3>⚙️ Game & Visual Customization Suite</h3>
                 <button class="modal-close" id="btn-close-game-settings">✕</button>
             </div>
+            
             <div class="modal-body settings-modal-body">
-                <!-- 1. Score / Eval Bar Toggle -->
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Evaluation Score Bar</span>
-                        <small>Show/hide the vertical evaluation bar beside the board</small>
+                <!-- LEFT COLUMN: ALL GAME & VISUAL CONTROLS -->
+                <div class="settings-form-column">
+                    
+                    <!-- SECTION 1: BOARD THEME & SQUARE MATERIALS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:var(--accent-color);">🎨 1. Board Theme & Square Materials</span>
+                        <small style="color:#a8a5a0; display:block; margin-top:2px;">Select color palette presets, surface textures, and custom square colors</small>
                     </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-score-bar" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
 
-                <hr class="setting-divider">
-
-                <!-- 2. Visual Hint Arrows (Separately for White & Black) -->
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">White Best Move Arrow</span>
-                        <small>Show Stockfish suggestion arrow when White is to move</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-arrow-white" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Black Best Move Arrow</span>
-                        <small>Show Stockfish suggestion arrow when Black is to move</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-arrow-black" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <hr class="setting-divider">
-
-                <!-- Strategic Turn Guidelines & Subject Practice Displays -->
-                <div class="setting-row-block">
-                    <span class="setting-label">🧠 Turn Guidelines & Focus Practice Displays</span>
-                    <small style="color:#8b8987;">Show real-time mentor hints and tactical checklists during turn</small>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Show Turn Guidelines & Checklist</span>
-                        <small>Display turn-by-turn strategic reminders collected from game analysis</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-show-turn-guidelines" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">📜 Edit & Manage Turn Rules</span>
-                        <small>Open rule editor to add, update or delete active turn guidelines</small>
-                    </div>
-                    <button class="btn btn-sm btn-secondary" id="btn-open-turn-rules-manager" style="font-size:11px; padding:4px 10px; flex-shrink:0;">📜 Manage Rules...</button>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Show Focus Subject Practice Advice</span>
-                        <small>Display live mentor instruction explaining position connection to practice subject</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-show-practice-subject" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Default Focus Subject</span>
-                        <small>Default theme for mentor live practice instructions</small>
-                    </div>
-                    <select id="setting-default-practice-subject" class="setting-select" style="background:#161512; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:12px;">
-                        <option value="auto">🤖 Auto (Mentor Prioritized)</option>
-                        <option value="loose_pieces">🛡️ Loose Pieces & Undefended Targets</option>
-                        <option value="king_safety">👑 King Safety & Escape Squares (Luft)</option>
-                        <option value="material_simplification">🎯 Material Advantage & Simplification</option>
-                        <option value="piece_activity">🏰 Piece Activity & Center Control</option>
-                        <option value="pawn_structure">♟️ Pawn Structure & Weak Squares</option>
-                    </select>
-                </div>
-
-                <hr class="setting-divider">
-
-                <!-- Positional Overlay Color Settings -->
-                <div class="setting-row-block">
-                    <span class="setting-label">🎨 Positional Board Overlay Colors</span>
-                    <small style="color:#8b8987;">Customize color overlays for White and Black outposts, weak holes, open files & loose targets</small>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">⚪ White Weakness / Weak Hole Color</span>
-                        <small>Square color for White's weak holes and weak targets</small>
-                    </div>
-                    <input type="color" id="setting-color-white-overlay" value="#3b82f6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">🏰 White Outpost / Strong Square</span>
-                        <small>Square color for White's outposts & key active squares</small>
-                    </div>
-                    <input type="color" id="setting-color-white-good" value="#10b981" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">⚫ Black Weakness / Weak Hole Color</span>
-                        <small>Square color for Black's weak holes and weak targets</small>
-                    </div>
-                    <input type="color" id="setting-color-black-overlay" value="#ef4444" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">🏰 Black Outpost / Strong Square</span>
-                        <small>Square color for Black's outposts & key active squares</small>
-                    </div>
-                    <input type="color" id="setting-color-black-good" value="#8b5cf6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
-                </div>
-
-                <hr class="setting-divider">
-
-                <!-- 2.5 Chess Clocks & Time Controls -->
-                <div class="setting-row-block">
-                    <span class="setting-label">⏱️ Chess Clock & Time Control Settings</span>
-                    <small style="color:#8b8987;">Configure independent player timers, odds time controls, and automated
-                        time loss</small>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Enable Chess Clocks</span>
-                        <small>Show digital clocks and enforce time limits during gameplay</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-enable-clocks">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Automate Loss on Time Flag</span>
-                        <small>End game automatically when a player's clock reaches 00:00</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-flag-automated-loss" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div id="time-control-options-container" class="setting-row-sub flex-column hidden">
-                    <!-- White Time Control -->
-                    <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%;">
-                        <span class="setting-label" style="font-size:12px; width:130px; flex-shrink:0;">⚪ White
-                            Time:</span>
-                        <select id="select-white-clock-preset" class="setting-select" style="flex:1;">
-                            <option value="untimed">♾️ Untimed / No Limit</option>
-                            <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
-                            <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
-                            <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
-                            <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
-                            <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
-                            <option value="custom">⚙️ Custom</option>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Board Theme Palette</span>
+                            <small>Pre-set board color combinations</small>
+                        </div>
+                        <select id="select-board-theme" class="setting-select">
+                            <option value="wood_walnut" selected>🪵 Classic Walnut Wood</option>
+                            <option value="emerald_marble">💚 Emerald Marble</option>
+                            <option value="cyber_neon">🎆 Cyberpunk Neon</option>
+                            <option value="glassmorphism">❄️ Frosted Glass</option>
+                            <option value="slate_dark">🌑 Midnight Slate</option>
+                            <option value="classic_green">🟩 Tournament Green</option>
+                            <option value="custom">🎨 Custom Palette</option>
                         </select>
                     </div>
-                    <div id="custom-white-clock-container" class="custom-clock-inputs hidden"
-                        style="display:flex; gap:8px; width:100%; margin-top:4px;">
-                        <input type="number" id="input-white-clock-mins" min="1" max="180" value="5" placeholder="Mins"
-                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
-                        <input type="number" id="input-white-clock-inc" min="0" max="60" value="0" placeholder="Inc (s)"
-                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
-                    </div>
 
-                    <div style="border-top:1px solid var(--card-border); margin:6px 0; width:100%;"></div>
-
-                    <!-- Black Time Control -->
-                    <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%;">
-                        <span class="setting-label" style="font-size:12px; width:130px; flex-shrink:0;">⚫ Black
-                            Time:</span>
-                        <select id="select-black-clock-preset" class="setting-select" style="flex:1;">
-                            <option value="untimed">♾️ Untimed / No Limit</option>
-                            <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
-                            <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
-                            <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
-                            <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
-                            <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
-                            <option value="custom">⚙️ Custom</option>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Square Material Texture</span>
+                            <small>Seamless board texture overlays (including official Lichess patterns)</small>
+                        </div>
+                        <select id="select-square-texture" class="setting-select">
+                            <option value="none" selected>None (Clean Vector Colors)</option>
+                            <option value="wood">Carved Wood Grain</option>
+                            <option value="marble">Real Marble Stone</option>
+                            <option value="glass">1.9x Centered Glass Tile</option>
+                            <option value="lichess_wood">Lichess Walnut Wood</option>
+                            <option value="lichess_wood2">Lichess Dark Wood</option>
+                            <option value="lichess_wood3">Lichess Mahogany Wood</option>
+                            <option value="lichess_wood4">Lichess Vintage Timber</option>
+                            <option value="lichess_maple">Lichess Maple Wood</option>
+                            <option value="lichess_marble">Lichess Imperial Marble</option>
+                            <option value="lichess_leather">Lichess Premium Leather</option>
+                            <option value="lichess_metal">Lichess Brushed Metal</option>
+                            <option value="lichess_blue">Lichess Deep Blue</option>
+                            <option value="lichess_horsey">Lichess Horsey Pattern</option>
+                            <option value="lichess_olive">Lichess Olive Garden</option>
                         </select>
                     </div>
-                    <div id="custom-black-clock-container" class="custom-clock-inputs hidden"
-                        style="display:flex; gap:8px; width:100%; margin-top:4px;">
-                        <input type="number" id="input-black-clock-mins" min="1" max="180" value="5" placeholder="Mins"
-                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
-                        <input type="number" id="input-black-clock-inc" min="0" max="60" value="0" placeholder="Inc (s)"
-                            style="flex:1; background:#272522; border:1px solid var(--card-border); color:#fff; border-radius:4px; padding:4px 8px; font-size:11px;">
-                    </div>
-                </div>
 
-                <hr class="setting-divider">
-
-                <!-- 3. Player Movement Mode per Color & Difficulty -->
-                <div class="setting-row-block">
-                    <span class="setting-label">White Player Control</span>
-                    <div class="radio-group">
-                        <label class="radio-option">
-                            <input type="radio" name="white-player-mode" value="manual" checked>
-                            <span>🧑 Manual (Player)</span>
-                        </label>
-                        <label class="radio-option">
-                            <input type="radio" name="white-player-mode" value="auto">
-                            <span>🤖 Auto (Computer)</span>
-                        </label>
-                    </div>
-                    <!-- White Difficulty Slider -->
-                    <div id="white-difficulty-container" class="difficulty-container">
-                        <div class="difficulty-header">
-                            <span class="difficulty-title">White Computer Strength:</span>
-                            <span id="white-difficulty-label" class="difficulty-badge">Intermediate (~1800 ELO)</span>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Custom Light Square Color</span>
+                            <small>Pick exact hex color for light squares</small>
                         </div>
-                        <input type="range" id="slider-white-difficulty" min="0" max="20" value="10" step="1"
-                            class="difficulty-slider">
+                        <input type="color" id="setting-custom-light-square" value="#f0d9b5" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
                     </div>
-                </div>
 
-                <div class="setting-row-block">
-                    <span class="setting-label">Black Player Control</span>
-                    <div class="radio-group">
-                        <label class="radio-option">
-                            <input type="radio" name="black-player-mode" value="manual" checked>
-                            <span>🧑 Manual (Player)</span>
-                        </label>
-                        <label class="radio-option">
-                            <input type="radio" name="black-player-mode" value="auto">
-                            <span>🤖 Auto (Computer)</span>
-                        </label>
-                    </div>
-                    <!-- Black Difficulty Slider -->
-                    <div id="black-difficulty-container" class="difficulty-container">
-                        <div class="difficulty-header">
-                            <span class="difficulty-title">Black Computer Strength:</span>
-                            <span id="black-difficulty-label" class="difficulty-badge">Intermediate (~1800 ELO)</span>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Custom Dark Square Color</span>
+                            <small>Pick exact hex color for dark squares</small>
                         </div>
-                        <input type="range" id="slider-black-difficulty" min="0" max="20" value="10" step="1"
-                            class="difficulty-slider">
+                        <input type="color" id="setting-custom-dark-square" value="#b58863" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Grid Lines Overlay</span>
+                            <small>Square border grid lines</small>
+                        </div>
+                        <select id="select-grid-lines" class="setting-select">
+                            <option value="none">None (Seamless)</option>
+                            <option value="subtle" selected>Subtle Grid Lines</option>
+                            <option value="bold">Bold Square Borders</option>
+                        </select>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 2: PIECE SET STYLE & SURFACE FINISH -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:var(--accent-color);">♟️ 2. Piece Set Style & Surface Finish</span>
+                        <small style="color:#a8a5a0; display:block; margin-top:2px;">Choose from 23 vector & 3D piece sets and custom piece lighting</small>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Piece Graphic Set</span>
+                            <small>Chess piece graphic family (23 Complete Sets)</small>
+                        </div>
+                        <select id="select-piece-set" class="setting-select">
+                            <option value="wood_3d_real" selected>🪵 3D Carved Real Wood</option>
+                            <option value="glass_crystal_3d">💎 3D Translucent Glass Crystal</option>
+                            <option value="dubrovny">🏛️ Lichess Dubrovnik (1950 Olympic Set)</option>
+                            <option value="gioco">🇮🇹 Lichess Gioco (Classic Italian Set)</option>
+                            <option value="icpieces">❄️ Lichess IC Crystal (Icy Precision)</option>
+                            <option value="maestro">🎓 Lichess Maestro (Traditional Master Set)</option>
+                            <option value="spatial">🚀 Lichess Spatial (Futuristic Vector Set)</option>
+                            <option value="pixel">👾 Lichess Pixel (8-Bit Arcade Retro)</option>
+                            <option value="horsey">🐴 Lichess Horsey (Meme Knight Set)</option>
+                            <option value="merida">⚔️ Lichess Merida (Tournament Vector)</option>
+                            <option value="pirouetti">💃 Lichess Pirouetti (Elegant Curves)</option>
+                            <option value="alpha">📐 Lichess Alpha (Sharp Tactical Geometry)</option>
+                            <option value="companion">🤝 Lichess Companion (Minimalist Outline)</option>
+                            <option value="fantasy">🧙‍♂️ Lichess Fantasy (Medieval Mythical)</option>
+                            <option value="fresca">🍃 Lichess Fresca (Fresh Clean Contour)</option>
+                            <option value="governor">👑 Lichess Governor (Regal Vector)</option>
+                            <option value="riohacha">🏜️ Lichess Riohacha (High Contrast)</option>
+                            <option value="staunty">🏆 Lichess Staunty (Official Staunton)</option>
+                            <option value="tatiana">✨ Lichess Tatiana (Artistic Curve)</option>
+                            <option value="neo_classic">♟️ Neo Classic (Standard Vector)</option>
+                            <option value="modern_outline">✏️ Modern Outline (Sleek Contours)</option>
+                            <option value="vintage_engraved">📜 Vintage Engraved (Hatched Timber)</option>
+                            <option value="bold_silhouette">⬛ Bold Silhouette (High Contrast Solid)</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Piece Surface Finish</span>
+                            <small>Surface texture reflections & filter lighting</small>
+                        </div>
+                        <select id="select-piece-texture" class="setting-select">
+                            <option value="smooth" selected>Smooth Gloss</option>
+                            <option value="wood_grain">Wood Grain Texture</option>
+                            <option value="metallic">Metallic Shine</option>
+                            <option value="frosted">Frosted Glass</option>
+                            <option value="glass_reflection">Glass Reflection</option>
+                        </select>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 3: AUDIO FEEDBACK & SOUND EFFECTS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:var(--accent-color);">🔊 3. Audio Feedback & Sound Effects</span>
+                        <small style="color:#a8a5a0; display:block; margin-top:2px;">Customize piece move, capture, check & blunder sound packs</small>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Enable Sound Effects</span>
+                            <small>Play acoustic feedback on moves and captures</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-enable-sound" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Sound FX Pack</span>
+                            <small>Audio sound set family</small>
+                        </div>
+                        <select id="select-sound-pack" class="setting-select">
+                            <option value="classic_wood" selected>🪵 Classic Acoustic Wood</option>
+                            <option value="digital_arcade">👾 Digital Arcade</option>
+                            <option value="soft_glass">🥂 Soft Crystal Glass</option>
+                            <option value="subtle_pop">🎈 Subtle Tactile Pop</option>
+                            <option value="silent">🔇 Muted / Silent</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Master Volume</span>
+                            <small>Adjust sound volume</small>
+                        </div>
+                        <input type="range" id="slider-sound-volume" min="0" max="1" step="0.05" value="0.8" style="width:120px; accent-color:var(--accent-color);">
+                    </div>
+
+                    <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+                        <span class="setting-label" style="font-size:11px; color:#8b8987;">Test Sound FX Pack:</span>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; width:100%;">
+                            <button type="button" class="btn btn-xs btn-secondary" id="btn-test-sound-move">🔊 Move</button>
+                            <button type="button" class="btn btn-xs btn-secondary" id="btn-test-sound-capture">⚔️ Capture</button>
+                            <button type="button" class="btn btn-xs btn-secondary" id="btn-test-sound-check">⚠️ Check</button>
+                            <button type="button" class="btn btn-xs btn-secondary" id="btn-test-sound-blunder">❌ Blunder</button>
+                        </div>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 4: ENGINE DISPLAYS & SUGGESTION ARROWS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">📊 4. Engine Evaluation & Suggestion Arrows</span>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Evaluation Score Bar</span>
+                            <small>Show/hide the vertical evaluation bar beside the board</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-score-bar" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">White Best Move Arrow</span>
+                            <small>Show Stockfish suggestion arrow when White is to move</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-arrow-white" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Black Best Move Arrow</span>
+                            <small>Show Stockfish suggestion arrow when Black is to move</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-arrow-black" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 5: TURN GUIDELINES & FOCUS PRACTICE ADVICE -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">🧠 5. Turn Guidelines & Focus Practice Advice</span>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Show Turn Guidelines & Checklist</span>
+                            <small>Display turn-by-turn strategic reminders collected from game analysis</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-show-turn-guidelines" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">📜 Edit & Manage Turn Rules</span>
+                            <small>Open rule editor to add, update or delete active turn guidelines</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-secondary" id="btn-open-turn-rules-manager" style="font-size:11px; padding:4px 10px; flex-shrink:0;">📜 Manage Rules...</button>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Show Focus Subject Practice Advice</span>
+                            <small>Display live mentor instruction explaining position connection to practice subject</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-show-practice-subject" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Default Focus Subject</span>
+                            <small>Default theme for mentor live practice instructions</small>
+                        </div>
+                        <select id="setting-default-practice-subject" class="setting-select">
+                            <option value="auto">🤖 Auto (Mentor Prioritized)</option>
+                            <option value="loose_pieces">🛡️ Loose Pieces & Undefended Targets</option>
+                            <option value="king_safety">👑 King Safety & Escape Squares (Luft)</option>
+                            <option value="material_simplification">🎯 Material Advantage & Simplification</option>
+                            <option value="piece_activity">🏰 Piece Activity & Center Control</option>
+                            <option value="pawn_structure">♟️ Pawn Structure & Weak Squares</option>
+                        </select>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 6: POSITIONAL OVERLAY COLORS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">🎨 6. Positional Board Overlay Colors</span>
+                        <small style="color:#8b8987;">Customize color overlays for White and Black outposts, weak holes, open files & loose targets</small>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">⚪ White Weakness / Weak Hole Color</span>
+                            <small>Square color for White's weak holes and weak targets</small>
+                        </div>
+                        <input type="color" id="setting-color-white-overlay" value="#3b82f6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">🏰 White Outpost / Strong Square</span>
+                            <small>Square color for White's outposts & key active squares</small>
+                        </div>
+                        <input type="color" id="setting-color-white-good" value="#10b981" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">⚫ Black Weakness / Weak Hole Color</span>
+                            <small>Square color for Black's weak holes and weak targets</small>
+                        </div>
+                        <input type="color" id="setting-color-black-overlay" value="#ef4444" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">🏰 Black Outpost / Strong Square</span>
+                            <small>Square color for Black's outposts & key active squares</small>
+                        </div>
+                        <input type="color" id="setting-color-black-good" value="#8b5cf6" style="background:transparent; border:none; width:36px; height:28px; cursor:pointer;">
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 7: CHESS CLOCKS & TIME CONTROL SETTINGS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">⏱️ 7. Chess Clock & Time Control Settings</span>
+                        <small style="color:#8b8987;">Configure independent player timers, odds time controls, and automated time loss</small>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Enable Chess Clocks</span>
+                            <small>Show digital clocks and enforce time limits during gameplay</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-enable-clocks">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Automate Loss on Time Flag</span>
+                            <small>End game automatically when a player's clock reaches 00:00</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-flag-automated-loss" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div id="time-control-options-container" class="setting-row-sub flex-column">
+                        <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%; margin-bottom:8px;">
+                            <span class="setting-label" style="font-size:12px; width:120px; flex-shrink:0;">⚪ White Time:</span>
+                            <select id="select-white-clock-preset" class="setting-select" style="flex:1;">
+                                <option value="untimed">♾️ Untimed / No Limit</option>
+                                <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
+                                <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
+                                <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
+                                <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
+                                <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
+                                <option value="custom">⚙️ Custom Time Control</option>
+                            </select>
+                        </div>
+                        <div id="custom-white-clock-container" class="clock-custom-inputs hidden" style="display:flex; gap:8px; width:100%; margin-bottom:12px;">
+                            <input type="number" id="input-white-clock-mins" value="5" min="1" max="180" style="width:70px;" placeholder="Mins">
+                            <input type="number" id="input-white-clock-inc" value="0" min="0" max="60" style="width:70px;" placeholder="Inc (s)">
+                        </div>
+
+                        <div class="clock-setting-row" style="display:flex; align-items:center; gap:8px; width:100%;">
+                            <span class="setting-label" style="font-size:12px; width:120px; flex-shrink:0;">⚫ Black Time:</span>
+                            <select id="select-black-clock-preset" class="setting-select" style="flex:1;">
+                                <option value="untimed">♾️ Untimed / No Limit</option>
+                                <option value="blitz_3_2">⚡ Blitz (3m + 2s)</option>
+                                <option value="blitz_5_0" selected>⚡ Blitz (5m + 0s)</option>
+                                <option value="rapid_10_0">⏱️ Rapid (10m + 0s)</option>
+                                <option value="rapid_15_10">⏱️ Rapid (15m + 10s)</option>
+                                <option value="classical_30_0">⏳ Classical (30m + 0s)</option>
+                                <option value="custom">⚙️ Custom Time Control</option>
+                            </select>
+                        </div>
+                        <div id="custom-black-clock-container" class="clock-custom-inputs hidden" style="display:flex; gap:8px; width:100%; margin-top:8px;">
+                            <input type="number" id="input-black-clock-mins" value="5" min="1" max="180" style="width:70px;" placeholder="Mins">
+                            <input type="number" id="input-black-clock-inc" value="0" min="0" max="60" style="width:70px;" placeholder="Inc (s)">
+                        </div>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 8: PLAYER CONTROL & COMPUTER STRENGTH (ELO RATINGS) -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">🧑‍💻 8. Player Controls & Computer Strength (ELO Rating Settings)</span>
+                    </div>
+
+                    <div class="setting-row-sub">
+                        <span class="setting-label" style="font-size:12px; font-weight:bold;">⚪ White Player Control</span>
+                        <div class="radio-group flex-row" style="gap:12px; margin-top:4px;">
+                            <label class="radio-label"><input type="radio" name="white-player-mode" value="manual" checked> 🧑 Manual (Human)</label>
+                            <label class="radio-label"><input type="radio" name="white-player-mode" value="auto"> 🤖 Auto (Computer)</label>
+                        </div>
+                        <div id="white-difficulty-container" class="difficulty-slider-container style-block" style="margin-top:8px;">
+                            <div class="flex-between">
+                                <label style="font-size:11px; color:#8b8987;">White Computer Strength:</label>
+                                <span id="white-difficulty-label" class="difficulty-badge" style="font-size:11px; font-weight:bold; color:#81b64c;">Casual (~1000 ELO)</span>
+                            </div>
+                            <input type="range" id="slider-white-difficulty" min="1" max="20" value="10" style="width:100%; accent-color:var(--accent-color);">
+                        </div>
+                    </div>
+
+                    <div class="setting-row-sub" style="margin-top:10px;">
+                        <span class="setting-label" style="font-size:12px; font-weight:bold;">⚫ Black Player Control</span>
+                        <div class="radio-group flex-row" style="gap:12px; margin-top:4px;">
+                            <label class="radio-label"><input type="radio" name="black-player-mode" value="manual" checked> 🧑 Manual (Human)</label>
+                            <label class="radio-label"><input type="radio" name="black-player-mode" value="auto"> 🤖 Auto (Computer)</label>
+                        </div>
+                        <div id="black-difficulty-container" class="difficulty-slider-container style-block" style="margin-top:8px;">
+                            <div class="flex-between">
+                                <label style="font-size:11px; color:#8b8987;">Black Computer Strength:</label>
+                                <span id="black-difficulty-label" class="difficulty-badge" style="font-size:11px; font-weight:bold; color:#81b64c;">Advanced (~1900 ELO)</span>
+                            </div>
+                            <input type="range" id="slider-black-difficulty" min="1" max="20" value="10" style="width:100%; accent-color:var(--accent-color);">
+                        </div>
+                    </div>
+
+                    <div class="setting-row" style="margin-top:10px;">
+                        <div class="setting-info">
+                            <span class="setting-label">🤖 Auto-Adjust Computer Difficulty to Active Profile</span>
+                            <small>Automatically matches Stockfish engine strength to active profile rating</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-auto-adjust-difficulty">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Auto-Adjust Difficulty Bias</span>
+                            <small>Challenge level relative to user profile ELO</small>
+                        </div>
+                        <select id="select-auto-adjust-bias" class="setting-select">
+                            <option value="easy">🟩 Easy (-150 ELO)</option>
+                            <option value="medium" selected>⚖️ Balanced (Equal ELO)</option>
+                            <option value="hard">🟥 Hard (+150 ELO)</option>
+                        </select>
+                    </div>
+
+                    <hr class="setting-divider">
+
+                    <!-- SECTION 9: BOARD EDIT WARNINGS & CONFIRMATIONS -->
+                    <div class="setting-row-block" style="background:#22201c; padding:8px 12px; border-radius:6px; border:1px solid var(--card-border);">
+                        <span class="setting-label" style="font-size:13px; font-weight:700; color:#fff;">✏️ 9. Board Edit Warnings & Confirmations</span>
+                        <small style="color:#8b8987;">Configure confirmation alerts when modifying positions in Edit Mode</small>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Alert on Overriding Piece</span>
+                            <small>Ask confirmation before overriding a piece on a square</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-alert-override" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Alert on Removing Piece</span>
+                            <small>Ask confirmation before removing a piece from the board</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-alert-remove" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Alert on Setting Position in Check</span>
+                            <small>Warn when edited position puts active player in Check</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-alert-check" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Alert on Setting Position in Checkmate</span>
+                            <small>Warn when edited position results in Checkmate</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-alert-mate" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <span class="setting-label">Alert on Setting Position in Stalemate / Tie</span>
+                            <small>Warn when edited position results in Stalemate or Tie</small>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle-alert-tie" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                </div>
+
+                <!-- RIGHT COLUMN: LIVE INTERACTIVE PREVIEW PANE -->
+                <div class="settings-preview-column">
+                    <div class="preview-header" style="width:100%; text-align:center;">
+                        <span style="font-size:12px; font-weight:bold; color:var(--text-heading); text-transform:uppercase; tracking:wider;">
+                            Live Board & Piece Preview
+                        </span>
+                        <small style="color:#a8a5a0; display:block; font-size:10px; margin-top:2px;">Updates instantly as options change</small>
+                    </div>
+
+                    <div id="settings-preview-board" class="settings-preview-chessboard chessboard" data-board-theme="wood_walnut" data-grid-style="subtle">
+                        <!-- Live Mini Preview Board -->
+                    </div>
+
+                    <div class="preview-info-box">
+                        <span style="color:#8b8987; font-size:10px; display:block;">Active Palette Theme:</span>
+                        <span id="preview-active-theme-name" style="font-weight:bold; color:var(--accent-color); font-size:11px;">Classic Walnut Wood</span>
                     </div>
                 </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">🤖 Auto-Adjust Computer Difficulty to Active Profile</span>
-                        <small>Automatically matches Stockfish engine strength to active profile rating (<span
-                                id="auto-adjust-profile-elo-text">1500 ELO</span>)</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-auto-adjust-difficulty">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div id="auto-adjust-bias-container" class="setting-row-sub hidden">
-                    <span class="setting-label" style="font-size:12px;">Difficulty Challenge Tier:</span>
-                    <select id="select-auto-adjust-bias" class="setting-select">
-                        <option value="easy">🟢 Easy (Target ~150 ELO below profile)</option>
-                        <option value="medium" selected>🟡 Medium (Match active profile ELO)</option>
-                        <option value="hard">🟠 Hard (Target ~150 ELO above profile)</option>
-                        <option value="nightmare">🔴 Nightmare (Target ~350+ ELO above profile)</option>
-                    </select>
-                </div>
-
-                <hr class="setting-divider">
-
-                <!-- 4. Board Edit Confirmation Alerts -->
-                <div class="setting-row-block">
-                    <span class="setting-label">✏️ Board Edit Warnings & Confirmations</span>
-                    <small style="color:#8b8987;">Configure confirmation alerts when modifying positions in Edit
-                        Mode</small>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Alert on Overriding Piece</span>
-                        <small>Ask confirmation before overriding a piece on a square</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-alert-override" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Alert on Removing Piece</span>
-                        <small>Ask confirmation before removing a piece from the board</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-alert-remove" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Alert on Setting Position in Check</span>
-                        <small>Warn when edited position puts active player in Check</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-alert-check" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Alert on Setting Position in Checkmate</span>
-                        <small>Warn when edited position results in Checkmate</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-alert-mate" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <span class="setting-label">Alert on Setting Position in Stalemate / Tie</span>
-                        <small>Warn when edited position results in Stalemate or Tie</small>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-alert-tie" checked>
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-
-
-
             </div>
+
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btn-cancel-game-settings">Cancel</button>
-                <button class="btn btn-primary" id="btn-apply-game-settings">Save & Apply</button>
+                <button class="btn btn-accent" id="btn-apply-game-settings">Save & Apply Settings</button>
+            </div>
+        </div>
+    </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-game-settings">Cancel</button>
+                <button class="btn btn-accent" id="btn-apply-game-settings">Save & Apply Settings</button>
+            </div>
+        </div>
+    </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-cancel-game-settings">Cancel</button>
+                <button class="btn btn-accent" id="btn-apply-game-settings">Save & Apply Settings</button>
             </div>
         </div>
     </div>
@@ -1177,11 +1384,19 @@
                                         </select>
                                         <button class="btn btn-accent" id="btn-create-profile">Create Profile</button>
                                     </div>
-                                    <div class="placement-test-banner">
-                                        <span>Unsure of your rating? Let the AI Mentor test your skills!</span>
-                                        <button class="btn btn-secondary btn-sm" id="btn-start-placement-test">🎯 Take
-                                            AI Placement Test</button>
-                                    </div>
+                                                                          <div class="form-row" style="margin-top:6px;">
+                                          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#fff; cursor:pointer;">
+                                              <input type="checkbox" id="new-profile-is-qa" style="accent-color:var(--accent-color);">
+                                              <span>🧪 Enable QA Developer Flag (is_qa = true)</span>
+                                          </label>
+                                      </div>
+                                      <div class="placement-test-banner" style="margin-top:10px;">
+                                          <span>Unsure of your rating? Let the AI Mentor test your skills!</span>
+                                          <div style="display:flex; gap:8px; margin-top:4px;">
+                                              <button class="btn btn-secondary btn-sm" id="btn-start-placement-test">🎯 Take AI Placement Test</button>
+                                              <button class="btn btn-secondary btn-sm" id="btn-seed-qa-profile" style="background:#2d2a24; border:1px solid #eab308; color:#fde047;">🧪 Seed QA Profile & Fake History</button>
+                                          </div>
+                                      </div>
                                 </div>
                                 <hr class="setting-divider">
                                 <div class="profiles-list-container">
@@ -1372,7 +1587,284 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.2"></script>
+
+    <!-- Enhanced Profile Analytics & Adaptive Exercise Suite Modal -->
+    <div id="enhanced-analytics-modal" class="modal-overlay hidden">
+        <div class="modal-content game-settings-content" style="width: 900px; max-width: 95vw;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1e1b4b, #0f172a); border-bottom: 1px solid #6366f1;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:20px;">📊</span>
+                    <div style="flex:1;">
+                        <h3 style="margin:0; font-size:16px; color:#fff;">Enhanced Profile Analytics & Adaptive Exercise Planner</h3>
+                        <span id="analytics-secondary-title" style="font-size:11px; color:#a5b4fc; display:block; margin-top:2px;">
+                            Bi-Directional DAG Tree Analysis • Repeating Error Recognition • Engine Exercise Drills • Games - <span id="hdr-games-count">52</span> • Nodes - <span id="hdr-nodes-count">770</span> • Eventful - <span id="hdr-eventful-count">142</span> • Need analysis - <span id="hdr-need-analysis-count">18</span>
+                        </span>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px; margin-right:12px;">
+                        <button class="btn btn-xs btn-accent" id="btn-run-dag-analysis" style="background:#2563eb; color:#fff; font-weight:bold; padding:5px 12px; border-radius:4px; border:none; cursor:pointer;">⚡ Analyze (18 Pending)</button>
+                        <div id="dag-analysis-progress-container" class="hidden" style="width:140px; background:#1e293b; height:6px; border-radius:3px; overflow:hidden; border:1px solid #3b82f6;">
+                            <div id="dag-analysis-progress-bar" style="width:0%; height:100%; background:linear-gradient(90deg, #3b82f6, #60a5fa); transition:width 0.15s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+                <button class="modal-close" id="btn-close-analytics-modal">✕</button>
+            </div>
+            
+            <div class="modal-body" style="padding:20px; display:flex; flex-direction:column; gap:16px; max-height:75vh; overflow-y:auto;">
+                
+                <!-- TOP BAR: Profile Overview & 6-Aspect Radar Metrics -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                    <div style="background:#18181b; border:1px solid #27272a; border-radius:8px; padding:14px;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                            <span style="font-size:12px; font-weight:700; color:#818cf8; text-transform:uppercase; letter-spacing:0.5px;">🎯 6-Aspect Skill Radar (DAG Node Metrics)</span>
+                            <span style="font-size:10px; color:#a1a1aa;">Click "Browse" to inspect node DAGs</span>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
+                            <!-- Aspect 1: Offensive Creation -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #3b82f6; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">⚔️ 1. OFFENSIVE CREATION</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">78% Rating</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="offensive_creation" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (42 Nodes)</button>
+                            </div>
+                            <!-- Aspect 2: Offensive Execution -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #60a5fa; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">⚡ 2. OFFENSIVE EXECUTION</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">72% Rating</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="offensive_execution" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (38 Nodes)</button>
+                            </div>
+                            <!-- Aspect 3: Offensive Yield -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #10b981; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">💰 3. OFFENSIVE YIELD</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">+84 ELO</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="offensive_yield" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (29 Nodes)</button>
+                            </div>
+                            <!-- Aspect 4: Defensive Prevention -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #f59e0b; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">🛡️ 4. DEFENSIVE PREVENTION</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">64% Rating</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="defensive_prevention" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (31 Nodes)</button>
+                            </div>
+                            <!-- Aspect 5: Defensive Failure -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #ef4444; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">💥 5. DEFENSIVE FAILURE</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">32% Blunders</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="defensive_failure" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (24 Nodes)</button>
+                            </div>
+                            <!-- Aspect 6: Defensive Damage -->
+                            <div style="background:#09090b; padding:8px; border-radius:6px; border-left:3px solid #8b5cf6; display:flex; flex-direction:column; justify-content:space-between;">
+                                <div>
+                                    <div style="font-size:10px; color:#a1a1aa;">🩸 6. DEFENSIVE DAMAGE</div>
+                                    <div style="font-size:13px; color:#fff; font-weight:bold; margin-top:2px;">28% Loss Severity</div>
+                                </div>
+                                <button class="btn btn-xs btn-secondary btn-browse-aspect" data-aspect="defensive_damage" style="margin-top:6px; font-size:10px; padding:2px 6px;">🔍 Browse (18 Nodes)</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background:#18181b; border:1px solid #27272a; border-radius:8px; padding:14px;">
+                        <span style="font-size:12px; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:0.5px;">🔍 Decision Tree & DAG Metrics</span>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:10px; text-align:center;">
+                            <div style="background:#09090b; padding:8px; border-radius:6px;">
+                                <div style="font-size:10px; color:#a1a1aa;">DAG NODES</div>
+                                <div style="font-size:16px; font-weight:bold; color:#fde047;" id="analytics-node-count">770</div>
+                            </div>
+                            <div style="background:#09090b; padding:8px; border-radius:6px;">
+                                <div style="font-size:10px; color:#a1a1aa;">BLUNDER SWINGS</div>
+                                <div style="font-size:16px; font-weight:bold; color:#f87171;">14.2%</div>
+                            </div>
+                            <div style="background:#09090b; padding:8px; border-radius:6px;">
+                                <div style="font-size:10px; color:#a1a1aa;">TIME PRESSURE</div>
+                                <div style="font-size:16px; font-weight:bold; color:#60a5fa;">High (3.2s/m)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 2: REPEATING ERRORS & WEAKNESS RECOGNITION -->
+                <div style="background:#18181b; border:1px solid #27272a; border-radius:8px; padding:14px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                        <span style="font-size:13px; font-weight:700; color:#ef4444; text-transform:uppercase; letter-spacing:0.5px;">⚠️ Repeating Error Patterns (Detected from History Dataset)</span>
+                        <span style="font-size:11px; color:#a1a1aa;">Internal Scrollable History Dataset</span>
+                    </div>
+                    
+                    <div id="analytics-repeating-errors-list" style="display:flex; flex-direction:column; gap:8px; max-height:210px; overflow-y:auto; padding-right:4px;">
+                        <div style="background:#09090b; border:1px solid #7f1d1d; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span style="font-weight:bold; font-size:12px; color:#fca5a5;">⚡ 1. Leaving Undefended Loose Targets</span>
+                                <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Leaving minor pieces un-backed during middlegame tactical exchanges under time pressure.</small>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <button class="btn btn-xs btn-secondary btn-browse-error" data-error-id="err_undefended" style="font-size:10px; padding:3px 8px;">🔍 Browse Nodes (35)</button>
+                                <span style="background:#991b1b; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">35% Blunders</span>
+                            </div>
+                        </div>
+
+                        <div style="background:#09090b; border:1px solid #78350f; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span style="font-weight:bold; font-size:12px; color:#fde047;">🛡️ 2. Premature Pawn Push & King Exposure</span>
+                                <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Advancing pawns in front of the castled king creates weak holes and invades opponent pieces.</small>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <button class="btn btn-xs btn-secondary btn-browse-error" data-error-id="err_king_exposure" style="font-size:10px; padding:3px 8px;">🔍 Browse Nodes (22)</button>
+                                <span style="background:#92400e; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">22% Blunders</span>
+                            </div>
+                        </div>
+
+                        <div style="background:#09090b; border:1px solid #3730a3; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span style="font-weight:bold; font-size:12px; color:#c7d2fe;">🎯 3. Missing Diagonal Pins on Queens/Rooks</span>
+                                <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Failing to spot bishop/queen pin skewers along major diagonals.</small>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <button class="btn btn-xs btn-secondary btn-browse-error" data-error-id="err_pins" style="font-size:10px; padding:3px 8px;">🔍 Browse Nodes (18)</button>
+                                <span style="background:#312e81; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">18% Blunders</span>
+                            </div>
+                        </div>
+
+                        <div style="background:#09090b; border:1px solid #065f46; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <span style="font-weight:bold; font-size:12px; color:#6ee7b7;">♟️ 4. Premature Rooks/Queens Simplification Loss</span>
+                                <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Trading heavy pieces when down in pawn material instead of creating counterplay.</small>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <button class="btn btn-xs btn-secondary btn-browse-error" data-error-id="err_simplification" style="font-size:10px; padding:3px 8px;">🔍 Browse Nodes (14)</button>
+                                <span style="background:#047857; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">14% Blunders</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: ENGINE-PLANNED ADAPTIVE EXERCISES -->
+                <div style="background:#18181b; border:1px solid #16a34a; border-radius:8px; padding:14px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                        <span style="font-size:13px; font-weight:700; color:#4ade80; text-transform:uppercase; letter-spacing:0.5px;">🧩 Engine-Planned Adaptive Exercises (Custom Generated to Fix Weaknesses)</span>
+                        <button class="btn btn-xs btn-secondary" id="btn-refresh-adaptive-exercises">🔄 Regenerate Drills</button>
+                    </div>
+                    
+                    <div id="analytics-adaptive-exercises-list" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px;">
+                        <div style="background:#09090b; border:1px solid #14532d; border-radius:6px; padding:10px; display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <span style="font-size:11px; font-weight:bold; color:#86efac;">⚡ Fix Undefended Target</span>
+                                <p style="font-size:10px; color:#a1a1aa; margin-top:4px;">Find the move that secures all undefended pieces and neutralizes opponent pin threats.</p>
+                            </div>
+                            <button class="btn btn-xs btn-accent btn-load-adaptive-ex" data-fen="r1bqk2r/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4" style="margin-top:8px; width:100%;">⚡ Play Drill (d3)</button>
+                        </div>
+
+                        <div style="background:#09090b; border:1px solid #14532d; border-radius:6px; padding:10px; display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <span style="font-size:11px; font-weight:bold; color:#86efac;">🛡️ Fix King Exposure</span>
+                                <p style="font-size:10px; color:#a1a1aa; margin-top:4px;">Re-organize pieces to cover weak dark holes around your castled king.</p>
+                            </div>
+                            <button class="btn btn-xs btn-accent btn-load-adaptive-ex" data-fen="r1bq1rk1/ppp2ppp/2n5/3p4/3P4/2PB1N2/P1P2PPP/R2Q1RK1 w - - 0 10" style="margin-top:8px; width:100%;">⚡ Play Drill (Re1)</button>
+                        </div>
+
+                        <div style="background:#09090b; border:1px solid #14532d; border-radius:6px; padding:10px; display:flex; flex-direction:column; justify-content:space-between;">
+                            <div>
+                                <span style="font-size:11px; font-weight:bold; color:#86efac;">🎯 Fix Missed Pin</span>
+                                <p style="font-size:10px; color:#a1a1aa; margin-top:4px;">Execute the pinning move that paralyzes the knight and captures material.</p>
+                            </div>
+                            <button class="btn btn-xs btn-accent btn-load-adaptive-ex" data-fen="rnbqk2r/pppp1ppp/5n2/4p3/1b2P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 0 4" style="margin-top:8px; width:100%;">⚡ Play Drill (d3)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QA DEBUG OVERLAY (Visible for is_qa: true profiles) -->
+                <div id="analytics-qa-debug-panel" style="background:#000; border:1px dashed #eab308; border-radius:6px; padding:10px; font-family:monospace; font-size:11px; color:#fde047;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #713f12; padding-bottom:4px; margin-bottom:6px;">
+                        <span style="font-weight:bold;">🧪 QA DEBUG OVERLAY (is_qa: true active)</span>
+                        <button class="btn btn-xs btn-accent" id="btn-qa-browse-dags-json" style="background:#eab308; color:#000; font-weight:bold; border:none; padding:3px 8px; cursor:pointer;">🧪 Browse Historic Games DAGs (Raw JSON Inspector)</button>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                        <div>
+                            <div>Engine: Stockfish 16 UCI Level 20</div>
+                            <div>DAG Nodes Analyzed: 770 Nodes</div>
+                        </div>
+                        <div>
+                            <div>LLM Grounding: NotebookLM Active</div>
+                            <div>API Response Time: 42ms</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btn-close-analytics-modal-footer">Close Inspector</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- DAG NODE BROWSER & EVENT EXPLANATION MODAL -->
+    <div id="dag-node-browser-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="width: 750px; max-width: 90vw; background: #0f172a; border: 1px solid #3b82f6;">
+            <div class="modal-header" style="background: #1e293b; border-bottom: 1px solid #3b82f6;">
+                <h3 id="browser-modal-title" style="margin:0; font-size:15px; color:#fff;">🔍 DAG Node Browser — Event Explanation</h3>
+                <button class="modal-close" id="btn-close-node-browser">✕</button>
+            </div>
+            <div class="modal-body" style="padding:16px; display:flex; gap:16px; max-height:65vh; overflow-y:auto;">
+                <!-- LEFT: Node List -->
+                <div style="flex:1; display:flex; flex-direction:column; gap:6px; max-height:55vh; overflow-y:auto;" id="browser-nodes-list">
+                    <!-- Populated dynamically -->
+                </div>
+                <!-- RIGHT: Selected Node Explanation & FEN Board -->
+                <div style="width:300px; background:#1e293b; border:1px solid #334155; border-radius:6px; padding:12px; display:flex; flex-direction:column; justify-content:space-between;" id="browser-node-details">
+                    <div>
+                        <span style="font-weight:bold; font-size:13px; color:#60a5fa;" id="browser-detail-title">Select a Node to Inspect</span>
+                        <div style="font-size:11px; color:#94a3b8; margin-top:6px;" id="browser-detail-desc">Click any node from the list on the left to load its position FEN, move classification, and Stockfish evaluation swing.</div>
+                    </div>
+                    <button class="btn btn-sm btn-accent" id="btn-browser-load-board" style="margin-top:12px; width:100%;">⚡ Load FEN on Main Board</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- QA HISTORIC DAGs RAW JSON EXPLORER MODAL -->
+    <div id="qa-dag-json-explorer-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="width: 900px; max-width: 95vw; background: #09090b; border: 1px solid #eab308;">
+            <div class="modal-header" style="background: #18181b; border-bottom: 1px solid #eab308;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">🧪</span>
+                    <h3 style="margin:0; font-size:15px; color:#fde047;">QA Historic Games DAGs — Raw Node JSON Inspector</h3>
+                </div>
+                <button class="modal-close" id="btn-close-qa-json-modal">✕</button>
+            </div>
+            
+            <div class="modal-body" style="padding:16px; display:flex; gap:16px; max-height:70vh; overflow-y:auto;">
+                <!-- LEFT: Historic Games & DAG Tree Navigator -->
+                <div style="width:320px; display:flex; flex-direction:column; gap:8px;">
+                    <span style="font-size:11px; font-weight:bold; color:#a1a1aa; text-transform:uppercase;">1. Select Game & DAG Node:</span>
+                    <div id="qa-json-game-selector" style="display:flex; flex-direction:column; gap:6px; max-height:55vh; overflow-y:auto; padding-right:4px;">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                
+                <!-- RIGHT: Syntax-Highlighted Raw JSON Viewer -->
+                <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between;">
+                        <span style="font-size:11px; font-weight:bold; color:#fde047; text-transform:uppercase;" id="qa-json-node-label">Selected Node JSON Schema</span>
+                        <button class="btn btn-xs btn-secondary" id="btn-copy-qa-node-json">📋 Copy Node JSON</button>
+                    </div>
+                    <pre id="qa-json-viewer" style="background:#000; border:1px solid #27272a; border-radius:6px; padding:12px; font-family:monospace; font-size:11px; color:#4ade80; max-height:52vh; overflow:auto; white-space:pre-wrap; margin:0;">
+Select a game and node on the left to inspect raw per_move_analysis and per_sequence_analysis JSON.
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 
 </html>

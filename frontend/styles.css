@@ -2772,3 +2772,452 @@ input:checked + .slider:before {
     from { transform: translateX(120%); opacity: 0; }
     to { transform: translateX(0); opacity: 1; }
 }
+
+/* Board Theme & Piece Texture Presets */
+.chessboard[data-board-theme="wood_walnut"] { --sq-light: #f0d9b5; --sq-dark: #b58863; }
+.chessboard[data-board-theme="emerald_marble"] { --sq-light: #e2e8f0; --sq-dark: #059669; }
+.chessboard[data-board-theme="cyber_neon"] { --sq-light: #1e1b4b; --sq-dark: #4338ca; }
+.chessboard[data-board-theme="glassmorphism"] { --sq-light: rgba(255,255,255,0.25); --sq-dark: rgba(30,41,59,0.6); }
+.chessboard[data-board-theme="slate_dark"] { --sq-light: #94a3b8; --sq-dark: #334155; }
+.chessboard[data-board-theme="classic_green"] { --sq-light: #ffffdd; --sq-dark: #86a666; }
+
+/* Grid Line Styles */
+.chessboard[data-grid-style="subtle"] .square { border: 1px solid rgba(0,0,0,0.08); }
+.chessboard[data-grid-style="bold"] .square { border: 1.5px solid rgba(0,0,0,0.3); }
+
+/* Piece Surface Textures */
+.square .piece[data-piece-texture="wood_grain"] { filter: contrast(115%) sepia(20%); }
+.square .piece[data-piece-texture="metallic"] { filter: brightness(120%) contrast(130%); }
+.square .piece[data-piece-texture="frosted"] { filter: opacity(85%) drop-shadow(0 4px 6px rgba(0,0,0,0.4)); }
+
+/* Advanced Board & Piece Styling Rules */
+
+/* --- Clean Base Square Colors --- */
+.square.light {
+    background-color: var(--sq-light, #f0d9b5) !important;
+    background-image: none !important;
+}
+
+.square.dark {
+    background-color: var(--sq-dark, #b58863) !important;
+    background-image: none !important;
+}
+
+/* --- Square Texture Overlay & Material Modulation --- */
+
+/* 1. Seamless Marble Texture Modulation */
+.chessboard[data-square-texture="marble"] .square.light {
+    background-color: var(--sq-light, #e2e8f0) !important;
+    background-image: url('/textures/marble_seamless.png') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: soft-light !important;
+    filter: brightness(1.12);
+}
+.chessboard[data-square-texture="marble"] .square.dark {
+    background-color: var(--sq-dark, #059669) !important;
+    background-image: url('/textures/marble_seamless.png') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: multiply !important;
+}
+
+/* 2. Clean Glass Tile Sheen Modulation (1.9x Zoom Center) */
+.chessboard[data-square-texture="glass"] .square.light {
+    background-color: var(--sq-light, #c0d6df) !important;
+    background-image: url('/textures/glass_tile_clean.png') !important;
+    background-size: 190% 190% !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: overlay !important;
+}
+.chessboard[data-square-texture="glass"] .square.dark {
+    background-color: var(--sq-dark, #4a6fa5) !important;
+    background-image: url('/textures/glass_tile_clean.png') !important;
+    background-size: 190% 190% !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: soft-light !important;
+}
+.chessboard[data-square-texture="glass"] .square.dark {
+    background-color: var(--sq-dark, #4a6fa5) !important;
+    background-image: url('/textures/glass_tile_clean.png') !important;
+    background-size: 200% 200% !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: soft-light !important;
+}
+.chessboard[data-square-texture="glass"] .square.dark {
+    background-color: var(--sq-dark, #4a6fa5) !important;
+    background-image: url('/textures/glass_tile_clean.png') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: soft-light !important;
+}
+
+/* 3. Wood Grain Modulation */
+.chessboard[data-square-texture="wood"] .square.light {
+    background-color: var(--sq-light, #f0d9b5) !important;
+    background-image: url('/textures/wood_light.png') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: multiply !important;
+}
+.chessboard[data-square-texture="wood"] .square.dark {
+    background-color: var(--sq-dark, #b58863) !important;
+    background-image: url('/textures/wood_dark.png') !important;
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-blend-mode: multiply !important;
+}
+
+/* 4. Cyberpunk Neon Custom Styling */
+.chessboard[data-board-theme="cyber_neon"] .square.light {
+    box-shadow: inset 0 0 12px rgba(99,102,241,0.4) !important;
+}
+.chessboard[data-board-theme="cyber_neon"] .square.dark {
+    box-shadow: inset 0 0 18px rgba(67,56,202,0.6) !important;
+}
+
+/* --- Grid Line Styles --- */
+.chessboard[data-grid-style="subtle"] .square { border: 1px solid rgba(0,0,0,0.08) !important; }
+.chessboard[data-grid-style="bold"] .square { border: 1.5px solid rgba(0,0,0,0.35) !important; }
+/* --- High Impact Piece Set Designs (data-piece-set) --- */
+
+/* 1. Translucent Glass Crystal Pieces */
+.square .piece[data-piece-set="glass_crystal"] path,
+.square .piece-svg[data-piece-set="glass_crystal"] path,
+.square .piece[data-piece-set="glass_crystal"] g,
+.square .piece-svg[data-piece-set="glass_crystal"] g {
+    transition: all 0.2s ease;
+}
+/* White Glass Crystal */
+.square .piece-svg[data-piece-set="glass_crystal"] path[fill="#ffffff"],
+.square .piece-svg[data-piece-set="glass_crystal"] g[fill="#ffffff"] path {
+    fill: rgba(224, 242, 254, 0.75) !important;
+    stroke: #38bdf8 !important;
+    stroke-width: 2.2px !important;
+}
+.square .piece-svg[data-piece-set="glass_crystal"] {
+    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.9)) drop-shadow(0 4px 8px rgba(0,0,0,0.4)) !important;
+}
+/* Black Glass Crystal */
+.square .piece-svg[data-piece-set="glass_crystal"] path[fill="#312e2b"],
+.square .piece-svg[data-piece-set="glass_crystal"] g[fill="#312e2b"] path {
+    fill: rgba(30, 41, 59, 0.8) !important;
+    stroke: #f43f5e !important;
+    stroke-width: 2.2px !important;
+}
+
+/* 2. Cyberpunk Neon Glow */
+.square .piece-svg[data-piece-set="cyber_glowing"] path[fill="#ffffff"],
+.square .piece-svg[data-piece-set="cyber_glowing"] g[fill="#ffffff"] path {
+    fill: rgba(6, 182, 212, 0.3) !important;
+    stroke: #00f3ff !important;
+    stroke-width: 2.6px !important;
+}
+.square .piece-svg[data-piece-set="cyber_glowing"] path[fill="#312e2b"],
+.square .piece-svg[data-piece-set="cyber_glowing"] g[fill="#312e2b"] path {
+    fill: rgba(217, 70, 239, 0.3) !important;
+    stroke: #ff007f !important;
+    stroke-width: 2.6px !important;
+}
+.square .piece-svg[data-piece-set="cyber_glowing"] {
+    filter: drop-shadow(0 0 8px #00f3ff) drop-shadow(0 0 16px rgba(0, 243, 255, 0.7)) !important;
+}
+
+/* 3. 3D Carved Wood */
+.square .piece-svg[data-piece-set="wood_carved"] path[fill="#ffffff"],
+.square .piece-svg[data-piece-set="wood_carved"] g[fill="#ffffff"] path {
+    fill: #f5dfbb !important;
+    stroke: #5c3515 !important;
+    stroke-width: 2px !important;
+}
+.square .piece-svg[data-piece-set="wood_carved"] path[fill="#312e2b"],
+.square .piece-svg[data-piece-set="wood_carved"] g[fill="#312e2b"] path {
+    fill: #3e2213 !important;
+    stroke: #120904 !important;
+    stroke-width: 2px !important;
+}
+.square .piece-svg[data-piece-set="wood_carved"] {
+    filter: sepia(50%) contrast(140%) drop-shadow(2px 5px 7px rgba(0,0,0,0.75)) !important;
+}
+
+/* 4. Alpha Tournament */
+.square .piece-svg[data-piece-set="alpha_modern"] path[fill="#ffffff"],
+.square .piece-svg[data-piece-set="alpha_modern"] g[fill="#ffffff"] path {
+    fill: #ffffff !important;
+    stroke: #0f172a !important;
+    stroke-width: 2.2px !important;
+}
+.square .piece-svg[data-piece-set="alpha_modern"] path[fill="#312e2b"],
+.square .piece-svg[data-piece-set="alpha_modern"] g[fill="#312e2b"] path {
+    fill: #1e293b !important;
+    stroke: #cbd5e1 !important;
+    stroke-width: 2.2px !important;
+}
+.square .piece-svg[data-piece-set="alpha_modern"] {
+    transform: scale(0.94);
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.5)) !important;
+}
+
+/* 5. Minimalist Flat */
+.square .piece-svg[data-piece-set="minimalist_flat"] path[fill="#ffffff"],
+.square .piece-svg[data-piece-set="minimalist_flat"] g[fill="#ffffff"] path {
+    fill: #f8fafc !important;
+    stroke: none !important;
+}
+.square .piece-svg[data-piece-set="minimalist_flat"] path[fill="#312e2b"],
+.square .piece-svg[data-piece-set="minimalist_flat"] g[fill="#312e2b"] path {
+    fill: #0f172a !important;
+    stroke: none !important;
+}
+.square .piece-svg[data-piece-set="minimalist_flat"] {
+    transform: scale(0.9);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)) !important;
+}
+
+
+/* --- High Impact Piece Surface Textures (data-piece-texture) --- */
+
+.square .piece-svg[data-piece-texture="frosted"] {
+    opacity: 0.84 !important;
+    backdrop-filter: blur(4px) !important;
+    filter: contrast(125%) brightness(110%) drop-shadow(0 4px 8px rgba(0,0,0,0.5)) !important;
+}
+
+.square .piece-svg[data-piece-texture="glass_reflection"] {
+    filter: brightness(120%) contrast(135%) drop-shadow(0 0 12px rgba(56, 189, 248, 0.75)) drop-shadow(0 4px 8px rgba(0,0,0,0.5)) !important;
+}
+
+.square .piece-svg[data-piece-texture="metallic"] {
+    filter: contrast(165%) brightness(140%) drop-shadow(0 0 6px rgba(255,255,255,0.5)) drop-shadow(0 6px 12px rgba(0,0,0,0.75)) !important;
+}
+
+.square .piece-svg[data-piece-texture="wood_grain"] {
+    filter: sepia(65%) saturate(165%) contrast(130%) drop-shadow(0 3px 6px rgba(0,0,0,0.65)) !important;
+}
+
+/* Modern Geometric Line Art */
+.square .piece-svg[data-piece-set="modern_outline"] {
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,0.4)) !important;
+}
+
+/* Vintage Engraved Woodcut */
+.square .piece-svg[data-piece-set="vintage_engraved"] {
+    filter: contrast(135%) drop-shadow(1px 3px 5px rgba(0,0,0,0.5)) !important;
+}
+
+/* Bold Solid Silhouette */
+.square .piece-svg[data-piece-set="bold_silhouette"] {
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)) !important;
+}
+
+
+/* --- 3D Piece Elevation & Perspective Styling --- */
+.square .piece-svg[data-piece-set="wood_3d_real"] {
+    transform: perspective(600px) rotateX(10deg) translateY(-4px) scale(1.06);
+    filter: drop-shadow(4px 10px 14px rgba(0,0,0,0.65)) drop-shadow(0 2px 4px rgba(0,0,0,0.4)) !important;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+}
+
+.square .piece-svg[data-piece-set="wood_3d_real"]:hover {
+    transform: perspective(600px) rotateX(10deg) translateY(-9px) scale(1.12);
+    filter: drop-shadow(6px 16px 20px rgba(0,0,0,0.75)) drop-shadow(0 4px 8px rgba(0,0,0,0.5)) !important;
+}
+
+.square .piece-svg[data-piece-set="glass_crystal_3d"] {
+    transform: perspective(600px) rotateX(10deg) translateY(-4px) scale(1.06);
+    filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.85)) drop-shadow(4px 10px 14px rgba(0,0,0,0.6)) !important;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+}
+
+.square .piece-svg[data-piece-set="glass_crystal_3d"]:hover {
+    transform: perspective(600px) rotateX(10deg) translateY(-9px) scale(1.12);
+    filter: drop-shadow(0 0 24px rgba(56, 189, 248, 1)) drop-shadow(6px 16px 20px rgba(0,0,0,0.7)) !important;
+}
+
+
+/* ==========================================================================
+   ULTRALIGHT & HIGH CONTRAST SVG CHESS PIECES & BOARD COORDINATE OVERLAYS
+   ========================================================================== */
+
+.square .piece-svg,
+.piece-svg,
+.square .piece,
+.square svg {
+    width: 86% !important;
+    height: 86% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    display: block !important;
+    margin: auto !important;
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    z-index: 2 !important;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.piece-svg:hover {
+    transform: scale(1.06);
+}
+
+/* Coordinate Labels High Contrast & Layering Fix */
+.square .coord-label,
+.coord-label {
+    position: absolute !important;
+    z-index: 10 !important;
+    pointer-events: none !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    font-family: system-ui, -apple-system, sans-serif !important;
+    line-height: 1 !important;
+    user-select: none !important;
+    transition: color 0.2s ease;
+}
+
+.square .coord-rank {
+    top: 3px !important;
+    left: 4px !important;
+}
+
+.square .coord-file {
+    bottom: 3px !important;
+    right: 4px !important;
+}
+
+.square.light .coord-label {
+    color: var(--sq-dark, #b58863) !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.95), 0 0 3px rgba(255, 255, 255, 0.9) !important;
+}
+
+.square.dark .coord-label {
+    color: var(--sq-light, #f0d9b5) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* ==========================================================================
+   FULL BOARD SEAMLESS LICHESS TEXTURES & SQUARE COLOR MODULATION
+   ========================================================================== */
+
+.chessboard[data-square-texture^="lichess_"] {
+    background-size: 100% 100% !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    transition: background-image 0.3s ease;
+}
+
+.chessboard[data-square-texture="lichess_wood"] { background-image: url('/textures/lichess_wood.jpg') !important; }
+.chessboard[data-square-texture="lichess_wood2"] { background-image: url('/textures/lichess_wood2.jpg') !important; }
+.chessboard[data-square-texture="lichess_wood3"] { background-image: url('/textures/lichess_wood3.jpg') !important; }
+.chessboard[data-square-texture="lichess_wood4"] { background-image: url('/textures/lichess_wood4.jpg') !important; }
+.chessboard[data-square-texture="lichess_maple"] { background-image: url('/textures/lichess_maple.jpg') !important; }
+.chessboard[data-square-texture="lichess_marble"] { background-image: url('/textures/lichess_marble.jpg') !important; }
+.chessboard[data-square-texture="lichess_leather"] { background-image: url('/textures/lichess_leather.jpg') !important; }
+.chessboard[data-square-texture="lichess_metal"] { background-image: url('/textures/lichess_metal.jpg') !important; }
+.chessboard[data-square-texture="lichess_blue"] { background-image: url('/textures/lichess_blue.jpg') !important; }
+.chessboard[data-square-texture="lichess_horsey"] { background-image: url('/textures/lichess_horsey.jpg') !important; }
+.chessboard[data-square-texture="lichess_olive"] { background-image: url('/textures/lichess_olive.jpg') !important; }
+
+/* Remove per-square tiling for Lichess board textures and apply semi-transparent grid square modulation */
+.chessboard[data-square-texture^="lichess_"] .square {
+    background-image: none !important;
+    transition: background-color 0.2s ease;
+}
+
+.chessboard[data-square-texture^="lichess_"] .square.light {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.chessboard[data-square-texture^="lichess_"] .square.dark {
+    background-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* ==========================================================================
+   2-COLUMN GAME & VISUAL CUSTOMIZATION SUITE MODAL STYLES
+   ========================================================================== */
+
+.modal-content.game-settings-content {
+    width: 880px !important;
+    max-width: 95vw !important;
+}
+
+.modal-body.settings-modal-body {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 18px !important;
+    align-items: flex-start !important;
+    max-height: 68vh !important;
+    overflow-y: hidden !important;
+    padding-right: 4px !important;
+}
+
+.settings-form-column {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    overflow-y: auto !important;
+    max-height: 66vh !important;
+    padding-right: 8px !important;
+}
+
+.settings-form-column::-webkit-scrollbar {
+    width: 6px;
+}
+
+.settings-form-column::-webkit-scrollbar-track {
+    background: #161512;
+    border-radius: 3px;
+}
+
+.settings-form-column::-webkit-scrollbar-thumb {
+    background: #383531;
+    border-radius: 3px;
+}
+
+.settings-preview-column {
+    width: 290px !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+    background-color: #1a1815 !important;
+    border: 1px solid var(--card-border) !important;
+    border-radius: 8px !important;
+    padding: 16px !important;
+}
+
+.settings-preview-chessboard {
+    width: 256px !important;
+    height: 256px !important;
+    border-radius: 6px !important;
+    border: 1px solid rgba(255,255,255,0.2) !important;
+    overflow: hidden !important;
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: repeat(8, 1fr) !important;
+    grid-template-rows: repeat(8, 1fr) !important;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6) !important;
+}
+
+.settings-preview-chessboard .square {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
+}
+
+.preview-info-box {
+    width: 100% !important;
+    text-align: center !important;
+    background: #22201c !important;
+    padding: 8px !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--card-border) !important;
+}
