@@ -1,4 +1,5 @@
 import os
+import json
 import chess
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -1046,8 +1047,8 @@ def load_persisted_profiles():
         try:
             with open(PROFILES_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            print("[load_persisted_profiles error]:", e)
     return {}
 
 def save_persisted_profiles():
@@ -1147,6 +1148,23 @@ class SwitchProfileRequest(BaseModel):
 
 class SubmitPlacementRequest(BaseModel):
     answers: dict
+
+class SyncProfilesRequest(BaseModel):
+    profiles: List[Dict[str, Any]]
+    active_profile_id: Optional[str] = None
+
+@app.post("/api/user/profiles/sync")
+async def sync_user_profiles(req: SyncProfilesRequest):
+    global USER_PROFILES, ACTIVE_PROFILE_ID
+    for p in req.profiles:
+        pid = p.get("id")
+        if pid:
+            USER_PROFILES[pid] = p
+    if req.active_profile_id and req.active_profile_id in USER_PROFILES:
+        ACTIVE_PROFILE_ID = req.active_profile_id
+    save_persisted_profiles()
+    return {"status": "success", "count": len(USER_PROFILES)}
+
 
 @app.get("/api/user/profiles")
 async def get_user_profiles():
@@ -1354,67 +1372,106 @@ async def update_config(req: ConfigUpdateRequest):
 async def get_profile_insights(profile_id: Optional[str] = None):
     """
     Enhanced Profile Analytics Endpoint:
-    Analyzes decision DAG trees, Stockfish eval swings, and 6-Aspect skill metrics.
-    Identifies repeating error signatures and strategic weaknesses.
+    Dynamically analyzes real DAG decision trees, Stockfish eval swings,
+    and 6-Aspect metrics strictly from the active profile's recorded history.
     """
     active_prof = USER_PROFILES.get(profile_id or ACTIVE_PROFILE_ID, list(USER_PROFILES.values())[0])
     is_qa = active_prof.get("is_qa", False)
+    history = active_prof.get("history", [])
+
+    games_count = len(history)
+    total_nodes = 0
+    eventful_count = 0
+    need_analysis_count = 0
+    
+    off_creation = 0
+    off_execution = 0
+    off_yield_sum = 0
+    off_yield_cnt = 0
+    def_prev = 0
+    def_fail = 0
+    def_damage_sum = 0
+    def_damage_cnt = 0
+    
+    error_counts = {}
+
+    for ev in history:
+        for n in ev.get("moves", []):
+            total_nodes += 1
+            st = n.get("analysis_status")
+            if st == "NEED_ANALYSIS":
+                need_analysis_count += 1
+            pm = n.get("per_move_analysis", {})
+            cls = pm.get("move_classification")
+            if cls in ["Blunder", "Mistake", "Inaccuracy", "Brilliant", "Great"]:
+                eventful_count += 1
+            flags = pm.get("six_aspect_flags", {})
+            if flags.get("offensive_creation"): off_creation += 1
+            if flags.get("offensive_execution"): off_execution += 1
+            if flags.get("offensive_yield", 0) > 0:
+                off_yield_sum += flags.get("offensive_yield", 0)
+                off_yield_cnt += 1
+            if flags.get("defensive_prevention"): def_prev += 1
+            if flags.get("defensive_failure"):
+                def_fail += 1
+                if flags.get("defensive_damage", 0) > 0:
+                    def_damage_sum += flags.get("defensive_damage", 0)
+                    def_damage_cnt += 1
+            sub_err = pm.get("tactical_sub_category")
+            if sub_err and cls in ["Blunder", "Mistake"]:
+                error_counts[sub_err] = error_counts.get(sub_err, 0) + 1
+
+    blunder_rate = round((def_fail / total_nodes * 100), 1) if total_nodes > 0 else 0.0
+    avg_yield = round(off_yield_sum / off_yield_cnt) if off_yield_cnt > 0 else 0
+    avg_damage = round(def_damage_sum / def_damage_cnt) if def_damage_cnt > 0 else 0
+
+    repeating_errors_list = []
+    error_labels = {
+        "undefended_loose_piece": ("Leaving Undefended Loose Targets", "tactics", "Leaving minor pieces un-backed during middlegame tactical exchanges."),
+        "king_exposure": ("Premature Pawn Push & King Exposure", "king_safety", "Advancing pawns in front of the castled king creates weak holes."),
+        "diagonal_pin": ("Missing Diagonal Pins on Queens/Rooks", "pins", "Failing to spot bishop/queen pin skewers along major diagonals."),
+        "premature_simplification": ("Premature Simplification Under Material Deficit", "endgame", "Trading heavy pieces when down in pawn material instead of counterplay.")
+    }
+
+    for ek, count in sorted(error_counts.items(), key=lambda x: x[1], reverse=True):
+        label, cat, desc = error_labels.get(ek, (ek.replace("_", " ").title(), "general", "Frequent blunder signature."))
+        pct = round((count / max(1, def_fail)) * 100)
+        repeating_errors_list.append({
+            "id": f"err_{ek}",
+            "title": label,
+            "category": cat,
+            "frequency": f"{pct}% of blunders ({count} Nodes)",
+            "description": desc,
+            "count": count
+        })
 
     insights = {
         "profile_id": active_prof.get("id"),
         "profile_name": active_prof.get("name"),
         "is_qa": is_qa,
-        "estimated_elo": active_prof.get("estimated_elo", 1680),
-        "games_analyzed": active_prof.get("games_played", 52),
-        "dag_nodes_count": 770 if is_qa else 120,
+        "estimated_elo": active_prof.get("estimated_elo", active_prof.get("elo", 1500)),
+        "games_analyzed": games_count,
+        "dag_nodes_count": total_nodes,
+        "eventful_count": eventful_count,
+        "need_analysis_count": need_analysis_count,
         "aspect_metrics": {
             "offensive": {
-                "creation": 78,
-                "execution": 72,
-                "yield": 84
+                "creation": round(off_creation / max(1, total_nodes) * 100) if total_nodes > 0 else 0,
+                "execution": round(off_execution / max(1, total_nodes) * 100) if total_nodes > 0 else 0,
+                "yield": avg_yield
             },
             "defensive": {
-                "prevention": 64,
-                "failure": 32,
-                "damage": 28
+                "prevention": round(def_prev / max(1, total_nodes) * 100) if total_nodes > 0 else 0,
+                "failure": blunder_rate,
+                "damage": avg_damage
             }
         },
-        "repeating_errors": [
-            {
-                "id": "err_undefended_pieces",
-                "title": "Leaving Undefended Loose Targets",
-                "category": "tactics",
-                "frequency": "High (35% of blunders)",
-                "description": "Leaving minor pieces un-backed during middlegame tactical exchanges under time pressure.",
-                "example_fen": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 5"
-            },
-            {
-                "id": "err_king_safety",
-                "title": "Premature Pawn Push & King Exposure",
-                "category": "king_safety",
-                "frequency": "Medium (22% of blunders)",
-                "description": "Advancing pawns in front of the castled king creates weak holes and invades opponent pieces.",
-                "example_fen": "r1bq1rk1/ppp2ppp/2n5/3p4/3P4/2PB1N2/P1P2PPP/R2Q1RK1 w - - 0 10"
-            },
-            {
-                "id": "err_pin_skewer",
-                "title": "Missing Diagonal Pins on Queens/Rooks",
-                "category": "pins",
-                "frequency": "Medium (18% of blunders)",
-                "description": "Failing to spot bishop/queen pin skewers along major diagonals.",
-                "example_fen": "rnbqk2r/pppp1ppp/5n2/4p3/1b2P3/2N2N2/PPPP1PPP/R1BQKB1R w KQkq - 0 4"
-            }
-        ],
-        "strengths": [
-            "Strong battery alignment along open files",
-            "High endgame simplification conversion rate when ahead in material"
-        ],
+        "repeating_errors": repeating_errors_list,
         "qa_debug_payload": {
-            "stockfish_depth": 20,
-            "uci_threads": 4,
-            "memory_hash_mb": 512,
-            "raw_eval_deltas_count": 500,
-            "llm_mentor_tokens": 1420
+            "total_nodes": total_nodes,
+            "eventful_nodes": eventful_count,
+            "pending_analysis_nodes": need_analysis_count,
+            "raw_eval_deltas_count": total_nodes
         } if is_qa else None
     }
     return insights

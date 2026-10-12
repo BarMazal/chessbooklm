@@ -3221,3 +3221,84 @@ input:checked + .slider:before {
     border-radius: 6px !important;
     border: 1px solid var(--card-border) !important;
 }
+
+
+/* ==========================================================================
+   📜 Left Sidebar Profile History Browser & QA Inspector Styles
+   ========================================================================== */
+.history-event-card {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 6px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.history-event-card:hover {
+    border-color: #3f3f46;
+}
+
+.history-event-header {
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    background: #1e1c18;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.history-event-header:hover {
+    background: #272520;
+}
+
+.history-event-body {
+    padding: 10px 12px;
+    border-top: 1px solid #27272a;
+    background: #0d0d10;
+}
+
+.history-chip {
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    color: #e4e4e7;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    transition: all 0.12s ease;
+}
+
+.history-chip:hover {
+    background: #3f3f46;
+    border-color: #71717a;
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.history-chip.active-chip {
+    background: #854d0e !important;
+    border-color: #eab308 !important;
+    color: #fef08a !important;
+    font-weight: 700;
+    box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
+}
+
+.history-chip.blunder-chip {
+    background: #7f1d1d !important;
+    border-color: #ef4444 !important;
+    color: #fca5a5 !important;
+}
+
+.history-undo-branch {
+    border-left: 2px solid #ef4444;
+    padding-left: 8px;
+    margin-top: 6px;
+    margin-bottom: 4px;
+    background: rgba(239, 68, 68, 0.05);
+    border-radius: 0 4px 4px 0;
+    padding: 6px 8px;
+}

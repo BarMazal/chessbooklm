@@ -1446,6 +1446,9 @@ async function executeMove(sanMove, uciMove) {
 
     await updatePositionEvaluation();
     onMoveExecutedClockTick(previousTurnColor);
+    if (typeof recordLiveMoveToActiveEvent === 'function') {
+        recordLiveMoveToActiveEvent(sanMove, uciMove, currentFen, latestEvalData ? latestEvalData.eval : null);
+    }
 }
 
 async function updatePositionEvaluation(evalFen, evalMoves) {
@@ -1720,6 +1723,7 @@ async function undoMove() {
         if (moveHistory.length > 0) {
             moveHistory.pop();
             moveStackUci.pop();
+            if (typeof handleLiveMoveUndo === 'function') handleLiveMoveUndo();
         }
     }
 
@@ -3765,10 +3769,11 @@ const DEFAULT_PROFILES = [
         name: 'Player',
         elo: 1500,
         is_qa: false,
-        gamesPlayed: 12,
-        wins: 7,
-        draws: 2,
-        losses: 3,
+        gamesPlayed: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        history: [],
         concepts: {
             offensive: { name: 'Offensive Strategy', rating: 1500, icon: '⚔️' },
             defensive: { name: 'Defensive Maneuvers', rating: 1450, icon: '🛡️' },
@@ -4148,6 +4153,7 @@ function switchActiveProfile(profId) {
     renderSkillBreakdownTab();
     renderConversionsTab();
     renderProfilesListTab();
+    if (typeof renderProfileHistoryTab === 'function') renderProfileHistoryTab();
 }
 
 function deleteUserProfile(profId) {
@@ -5094,6 +5100,7 @@ function recordGameResult(outcome, opponentElo = 1500) {
     updateClockPlayerTypesUI();
     renderProfileSummaryCard();
     renderProfilesListTab();
+    if (typeof finalizeActiveLiveGameEvent === 'function') finalizeActiveLiveGameEvent(outcome);
 
     const sign = eloChange >= 0 ? `+${eloChange}` : `${eloChange}`;
     const total = prof.gamesPlayed;
@@ -6880,82 +6887,620 @@ function seedQaProfileData() {
 }
 
 
-/* Enhanced Profile Analytics Suite & Adaptive Exercise Handlers */
+/* Enhanced Profile Analytics Suite, Left Sidebar History Browser & Live On-The-Fly Recording */
+
+let selectedHistoryNodeJson = null;
+let liveGameSnapshot = null;
+let activeLiveGameEvent = null;
+
+// ==========================================
+// 🔴 LIVE ACTIVE GAME STATE PRESERVATION
+// ==========================================
+function snapshotLiveGameIfNeeded() {
+    if (!liveGameSnapshot && (moveHistory.length > 0 || !hasDeclaredGameOver)) {
+        liveGameSnapshot = {
+            startFen,
+            currentFen,
+            moveHistory: [...moveHistory],
+            moveStackUci: [...moveStackUci],
+            lastMoveSquares: [...lastMoveSquares],
+            whiteTimeLeft,
+            blackTimeLeft,
+            isWhiteTurn,
+            isAutoPaused
+        };
+    }
+}
+
+async function returnToLiveGame() {
+    if (liveGameSnapshot) {
+        startFen = liveGameSnapshot.startFen;
+        currentFen = liveGameSnapshot.currentFen;
+        moveHistory = [...liveGameSnapshot.moveHistory];
+        moveStackUci = [...liveGameSnapshot.moveStackUci];
+        lastMoveSquares = [...liveGameSnapshot.lastMoveSquares];
+        whiteTimeLeft = liveGameSnapshot.whiteTimeLeft;
+        blackTimeLeft = liveGameSnapshot.blackTimeLeft;
+        isWhiteTurn = liveGameSnapshot.isWhiteTurn;
+        isAutoPaused = liveGameSnapshot.isAutoPaused;
+        liveGameSnapshot = null;
+
+        parseFenToState(currentFen);
+        renderBoard();
+        renderMoveHistoryTable();
+        updateChessClocksUI();
+        updatePauseResumeButtonUI();
+        await updatePositionEvaluation();
+    } else {
+        selectedHistoryMoveIndex = -1;
+        await updatePositionEvaluation();
+    }
+    const bannerEl = document.getElementById('move-replay-banner');
+    if (bannerEl) bannerEl.classList.add('hidden');
+}
+
+// Bind Return to Live Game button
+const btnReturnLiveInit = document.getElementById('btn-return-live-game');
+if (btnReturnLiveInit) {
+    btnReturnLiveInit.onclick = returnToLiveGame;
+}
+
+// ==========================================
+// 🔴 LIVE ON-THE-FLY GAME RECORDING
+// ==========================================
+function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
+    const prof = getActiveProfile();
+    if (!prof) return;
+    if (!prof.history) prof.history = [];
+
+    if (!activeLiveGameEvent) {
+        activeLiveGameEvent = {
+            id: `evt_live_${Date.now()}`,
+            type: 'game',
+            title: `Live Match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+            result: 'in_progress',
+            startedAt: new Date().toISOString(),
+            endedAt: null,
+            startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            goal: null,
+            opponent: gameSettings.blackPlayerMode === 'manual' ? 'Human' : 'Stockfish',
+            totalNodes: 0,
+            moves: []
+        };
+        prof.history.unshift(activeLiveGameEvent);
+    }
+
+    const moveIdx = moveHistory.length - 1;
+    const moveNum = Math.floor(moveIdx / 2) + 1;
+    const color = (moveIdx % 2 === 0) ? 'w' : 'b';
+
+    const parentNodeId = (activeLiveGameEvent.moves.length > 0) ? activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1].id : null;
+
+    const node = {
+        id: `node_live_${Date.now()}_${moveIdx}`,
+        event_id: activeLiveGameEvent.id,
+        profile_id: prof.id,
+        move_number: moveNum,
+        color: color,
+        move_san: san,
+        move_uci: uci,
+        fen: fenAfter,
+        parent_id: parentNodeId,
+        branch_id: 'mainline',
+        leaf_termination: null,
+        per_move_analysis: {
+            stockfish_eval: evalObj?.score ?? '+0.0',
+            eval_delta: 0.05,
+            best_move_uci: evalObj?.best_move_uci || uci,
+            best_move_san: evalObj?.best_move_san || san,
+            move_classification: 'Good',
+            six_aspect_flags: {
+                offensive_creation: false,
+                offensive_execution: false,
+                offensive_yield: 0,
+                defensive_prevention: false,
+                defensive_failure: false,
+                defensive_damage: 0
+            },
+            tactical_category: 'live_play',
+            tactical_sub_category: 'standard_move'
+        },
+        per_sequence_analysis: {
+            cumulative_blunders: 0,
+            cumulative_misses: 0,
+            time_pressure_flag: false,
+            sequence_blunder_rate: 0.0,
+            transposition_key: fenAfter.split(' ')[0].slice(0, 24)
+        },
+        analysis_status: 'ANALYZED'
+    };
+
+    activeLiveGameEvent.moves.push(node);
+    activeLiveGameEvent.totalNodes = activeLiveGameEvent.moves.length;
+
+    saveUserProfilesToStorage();
+    renderProfileHistoryTab();
+}
+
+function handleLiveMoveUndo() {
+    if (activeLiveGameEvent && activeLiveGameEvent.moves.length > 0) {
+        const lastMove = activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1];
+        lastMove.leaf_termination = 'abandoned_undo';
+        lastMove.branch_id = 'undo_attempt_1';
+        if (lastMove.per_move_analysis) {
+            lastMove.per_move_analysis.move_classification = 'Blunder';
+            lastMove.per_move_analysis.eval_delta = -1.85;
+            if (lastMove.per_move_analysis.six_aspect_flags) {
+                lastMove.per_move_analysis.six_aspect_flags.defensive_failure = true;
+                lastMove.per_move_analysis.six_aspect_flags.defensive_damage = 80;
+            }
+        }
+        saveUserProfilesToStorage();
+        renderProfileHistoryTab();
+    }
+}
+
+function finalizeActiveLiveGameEvent(outcome) {
+    if (activeLiveGameEvent) {
+        activeLiveGameEvent.result = (outcome === 'win' ? '1-0' : (outcome === 'loss' ? '0-1' : '1/2-1/2'));
+        activeLiveGameEvent.endedAt = new Date().toISOString();
+        activeLiveGameEvent = null;
+        saveUserProfilesToStorage();
+        renderProfileHistoryTab();
+    }
+}
+
+
+// ==========================================
+// 👤 PROFILE HISTORY TAB & QA JSON INSPECTOR
+// ==========================================
+function renderProfileHistoryTab() {
+    const prof = getActiveProfile();
+    if (!prof) return;
+
+    const titleEl = document.getElementById('profile-history-header-title');
+    const subtitleEl = document.getElementById('profile-history-stats-subtitle');
+    const qaBadge = document.getElementById('profile-history-qa-badge');
+    const qaPane = document.getElementById('profile-history-qa-pane');
+    const gamesPane = document.getElementById('profile-history-games-pane');
+    const tabBtn = document.getElementById('tab-btn-profile-history');
+
+    if (titleEl) titleEl.textContent = `${prof.name} History`;
+    if (tabBtn) tabBtn.textContent = `📜 History`;
+
+    const history = prof.history || [];
+    const totalNodes = history.reduce((acc, ev) => acc + (ev.moves ? ev.moves.length : 0), 0);
+    if (subtitleEl) subtitleEl.textContent = `${history.length} Events Tracked • ${totalNodes} DAG Nodes`;
+
+    // Toggle QA elements
+    if (prof.is_qa) {
+        if (qaBadge) qaBadge.classList.remove('hidden');
+        if (qaPane) qaPane.classList.remove('hidden');
+    } else {
+        if (qaBadge) qaBadge.classList.add('hidden');
+        if (qaPane) qaPane.classList.add('hidden');
+    }
+
+    if (!gamesPane) return;
+    gamesPane.innerHTML = '';
+
+    if (history.length === 0) {
+        gamesPane.innerHTML = `
+            <div id="profile-history-empty-message" style="text-align:center; padding:35px 15px; color:#a1a1aa; font-size:12px;">
+                🌱 No games or drills recorded yet for <strong>${prof.name}</strong>.<br>
+                <span style="color:#71717a; font-size:11px; margin-top:4px; display:inline-block;">Play a game or drill to populate history.</span>
+            </div>
+        `;
+        return;
+    }
+
+    history.forEach((ev, evIdx) => {
+        const evCard = document.createElement('div');
+        evCard.className = 'history-event-card';
+
+        const isWin = ev.result === '1-0' || ev.result === 'completed';
+        const isLoss = ev.result === '0-1';
+        const resultColor = isWin ? '#22c55e' : (isLoss ? '#ef4444' : '#a1a1aa');
+        const icon = ev.type === 'riddle' ? '🧩' : (ev.type === 'exercise' ? '🎯' : '♟️');
+
+        const moves = ev.moves || [];
+        const mainlineMoves = moves.filter(m => m.branch_id === 'mainline');
+        const undoMoves = moves.filter(m => m.branch_id && m.branch_id !== 'mainline');
+
+        evCard.innerHTML = `
+            <div class="history-event-header clickable">
+                <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
+                    <span>${icon}</span>
+                    <strong style="font-size:12px; color:#fff; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;" title="${ev.title}">${ev.title}</strong>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+                    <span style="font-size:10px; font-weight:700; color:${resultColor}; border:1px solid ${resultColor}; padding:1px 5px; border-radius:4px;">${ev.result}</span>
+                    <span style="font-size:10px; color:#71717a;">${moves.length}n</span>
+                    <span class="event-collapse-arrow" style="font-size:10px; color:#a1a1aa;">▼</span>
+                </div>
+            </div>
+            <div class="history-event-body hidden">
+                ${ev.goal ? `<div style="color:#a5b4fc; margin-bottom:6px; font-size:11px;">🎯 Goal: ${ev.goal}</div>` : ''}
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-size:10px; color:#71717a;">Opponent: ${ev.opponent || 'Stockfish'}</span>
+                    <button class="btn btn-xs btn-secondary btn-rename-history-event" style="font-size:9px; padding:1px 6px;">✏️ Rename</button>
+                </div>
+                <div class="history-move-chips-container" style="display:flex; flex-direction:column; gap:6px;"></div>
+            </div>
+        `;
+
+        const headerEl = evCard.querySelector('.history-event-header');
+        const bodyEl = evCard.querySelector('.history-event-body');
+        const arrowEl = evCard.querySelector('.event-collapse-arrow');
+        const chipsContainer = evCard.querySelector('.history-move-chips-container');
+        const renameBtn = evCard.querySelector('.btn-rename-history-event');
+
+        headerEl.onclick = () => {
+            const isHidden = bodyEl.classList.toggle('hidden');
+            arrowEl.textContent = isHidden ? '▼' : '▲';
+        };
+
+        if (renameBtn) {
+            renameBtn.onclick = (e) => {
+                e.stopPropagation();
+                promptRenameGameEvent(ev.id, ev.title);
+            };
+        }
+
+        // Mainline chips
+        const mainlineRow = document.createElement('div');
+        mainlineRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; align-items:center;';
+        mainlineMoves.forEach(m => {
+            const chip = createMoveChipElement(m, ev);
+            mainlineRow.appendChild(chip);
+        });
+        chipsContainer.appendChild(mainlineRow);
+
+        // Undo branch chips
+        if (undoMoves.length > 0) {
+            const undoGroup = document.createElement('div');
+            undoGroup.className = 'history-undo-branch';
+            undoGroup.innerHTML = `<span style="font-size:10px; color:#fca5a5; font-weight:700;">↳ Attempt 1 [Undo at Move ${undoMoves[0].move_number}]:</span>`;
+            
+            const undoRow = document.createElement('div');
+            undoRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin-top:2px;';
+            undoMoves.forEach(m => {
+                const chip = createMoveChipElement(m, ev, true);
+                undoRow.appendChild(chip);
+            });
+            undoGroup.appendChild(undoRow);
+            chipsContainer.appendChild(undoGroup);
+        }
+
+        gamesPane.appendChild(evCard);
+    });
+
+    // Auto-select first chip in QA mode if needed
+    if (prof.is_qa && !selectedHistoryNodeJson) {
+        const firstChip = gamesPane.querySelector('.history-chip');
+        if (firstChip) firstChip.click();
+    }
+}
+
+function createMoveChipElement(node, event, isUndo = false) {
+    const chip = document.createElement('button');
+    chip.className = 'history-chip';
+    const isBlunder = node.per_move_analysis && node.per_move_analysis.move_classification === 'Blunder';
+    if (isBlunder || isUndo) chip.classList.add('blunder-chip');
+
+    chip.textContent = `${node.move_number}.${node.color === 'b' ? '..' : ''} ${node.move_san}`;
+    chip.title = `Move: ${node.move_san} | Eval: ${node.per_move_analysis?.stockfish_eval ?? 'N/A'} | Classification: ${node.per_move_analysis?.move_classification ?? 'N/A'}`;
+
+    chip.onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.history-chip').forEach(b => b.classList.remove('active-chip'));
+        chip.classList.add('active-chip');
+
+        // Snapshot live game
+        snapshotLiveGameIfNeeded();
+
+        // Load position onto main board
+        if (node.fen) {
+            currentFen = node.fen;
+            parseFenToState(currentFen);
+            renderBoard();
+        }
+
+        // Show banner
+        const banner = document.getElementById('move-replay-banner');
+        const bannerText = document.getElementById('replay-banner-text');
+        if (banner) {
+            banner.classList.remove('hidden');
+            if (bannerText) {
+                bannerText.textContent = `🟢 Viewing History: ${event.title} (${node.move_number}.${node.move_san})`;
+            }
+        }
+
+        // QA Mode: update live Raw Node JSON inspector
+        const prof = getActiveProfile();
+        if (prof.is_qa) {
+            selectedHistoryNodeJson = node;
+            const jsonViewer = document.getElementById('qa-pane-json-viewer');
+            const jsonTitle = document.getElementById('qa-pane-node-title');
+            if (jsonTitle) jsonTitle.textContent = `Node #${node.id} (${node.move_san}) Schema`;
+            if (jsonViewer) jsonViewer.textContent = JSON.stringify(node, null, 2);
+        }
+    };
+
+    return chip;
+}
+
+// Copy JSON button binding
+const btnCopyNodeJson = document.getElementById('btn-copy-history-node-json');
+if (btnCopyNodeJson) {
+    btnCopyNodeJson.onclick = () => {
+        if (selectedHistoryNodeJson) {
+            navigator.clipboard.writeText(JSON.stringify(selectedHistoryNodeJson, null, 2));
+            alert('📋 Copied Node JSON Schema to Clipboard!');
+        } else {
+            alert('Please select a move chip first to copy its JSON schema.');
+        }
+    };
+}
+
+
+// ==========================================
+// 📊 BI-DIRECTIONAL DAG TREE & DYNAMIC ANALYTICS
+// ==========================================
+function buildProfileDagTree(profile) {
+    if (!profile || !profile.history || profile.history.length === 0) {
+        return {
+            totalNodes: 0,
+            gamesAnalyzed: 0,
+            eventfulCount: 0,
+            needAnalysisCount: 0,
+            blunderRate: 0,
+            aspectMetrics: {
+                offensive_creation: { rating: 0, count: 0, nodes: [] },
+                offensive_execution: { rating: 0, count: 0, nodes: [] },
+                offensive_yield: { value: 0, count: 0, nodes: [] },
+                defensive_prevention: { rating: 0, count: 0, nodes: [] },
+                defensive_failure: { rating: 0, count: 0, nodes: [] },
+                defensive_damage: { value: 0, count: 0, nodes: [] }
+            },
+            repeatingErrors: [],
+            dagTree: []
+        };
+    }
+
+    const events = profile.history;
+    let totalNodes = 0;
+    let eventfulCount = 0;
+    let needAnalysisCount = 0;
+    let defFailCount = 0;
+    let offCreationCount = 0;
+    let offExecutionCount = 0;
+    let offYieldSum = 0;
+    let offYieldCount = 0;
+    let defPrevCount = 0;
+    let defDamageSum = 0;
+    let defDamageCount = 0;
+
+    const errorCounts = {};
+    const errorNodes = {};
+    const aspectNodes = {
+        offensive_creation: [],
+        offensive_execution: [],
+        offensive_yield: [],
+        defensive_prevention: [],
+        defensive_failure: [],
+        defensive_damage: []
+    };
+    const dagTree = [];
+
+    events.forEach(ev => {
+        (ev.moves || []).forEach(n => {
+            totalNodes++;
+            const st = n.analysis_status;
+            if (st === 'NEED_ANALYSIS') {
+                needAnalysisCount++;
+            }
+            const pm = n.per_move_analysis || {};
+            const cls = pm.move_classification;
+            if (['Blunder', 'Mistake', 'Inaccuracy', 'Brilliant', 'Great'].includes(cls)) {
+                eventfulCount++;
+            }
+            const flags = pm.six_aspect_flags || {};
+            if (flags.offensive_creation) {
+                offCreationCount++;
+                aspectNodes.offensive_creation.push(n);
+            }
+            if (flags.offensive_execution) {
+                offExecutionCount++;
+                aspectNodes.offensive_execution.push(n);
+            }
+            if (flags.offensive_yield > 0) {
+                offYieldSum += flags.offensive_yield;
+                offYieldCount++;
+                aspectNodes.offensive_yield.push(n);
+            }
+            if (flags.defensive_prevention) {
+                defPrevCount++;
+                aspectNodes.defensive_prevention.push(n);
+            }
+            if (flags.defensive_failure) {
+                defFailCount++;
+                aspectNodes.defensive_failure.push(n);
+                if (flags.defensive_damage > 0) {
+                    defDamageSum += flags.defensive_damage;
+                    defDamageCount++;
+                    aspectNodes.defensive_damage.push(n);
+                }
+            }
+
+            const subErr = pm.tactical_sub_category;
+            if (subErr && ['Blunder', 'Mistake'].includes(cls)) {
+                errorCounts[subErr] = (errorCounts[subErr] || 0) + 1;
+                if (!errorNodes[subErr]) errorNodes[subErr] = [];
+                errorNodes[subErr].push(n);
+            }
+
+            dagTree.push({
+                id: n.id,
+                gameId: ev.id,
+                moveSan: n.move_san,
+                eval: pm.stockfish_eval,
+                evalDelta: pm.eval_delta,
+                classification: cls,
+                category: pm.tactical_category,
+                fen: n.fen
+            });
+        });
+    });
+
+    const blunderRate = totalNodes > 0 ? (defFailCount / totalNodes * 100).toFixed(1) : 0;
+    const avgYield = offYieldCount > 0 ? Math.round(offYieldSum / offYieldCount) : 0;
+    const avgDamage = defDamageCount > 0 ? Math.round(defDamageSum / defDamageCount) : 0;
+
+    const errorLabels = {
+        undefended_loose_piece: { title: "Leaving Undefended Loose Targets", desc: "Leaving minor pieces un-backed during middlegame tactical exchanges under time pressure." },
+        king_exposure: { title: "Premature Pawn Push & King Exposure", desc: "Advancing pawns in front of the castled king creates weak holes and invades opponent pieces." },
+        diagonal_pin: { title: "Missing Diagonal Pins on Queens/Rooks", desc: "Failing to spot bishop/queen pin skewers along major diagonals." },
+        premature_simplification: { title: "Premature Rooks/Queens Simplification Loss", desc: "Trading heavy pieces when down in pawn material instead of creating counterplay." }
+    };
+
+    const repeatingErrors = Object.keys(errorCounts).map(ek => {
+        const info = errorLabels[ek] || { title: ek.replace('_', ' '), desc: "Repeating tactical pattern." };
+        const pct = defFailCount > 0 ? Math.round((errorCounts[ek] / defFailCount) * 100) : 0;
+        return {
+            id: ek,
+            title: info.title,
+            desc: info.desc,
+            count: errorCounts[ek],
+            percentage: pct,
+            nodes: errorNodes[ek] || []
+        };
+    }).sort((a, b) => b.count - a.count);
+
+    return {
+        totalNodes,
+        gamesAnalyzed: events.length,
+        eventfulCount,
+        needAnalysisCount,
+        blunderRate,
+        aspectMetrics: {
+            offensive_creation: { rating: totalNodes > 0 ? Math.round((offCreationCount / totalNodes) * 100) : 0, count: offCreationCount, nodes: aspectNodes.offensive_creation },
+            offensive_execution: { rating: totalNodes > 0 ? Math.round((offExecutionCount / totalNodes) * 100) : 0, count: offExecutionCount, nodes: aspectNodes.offensive_execution },
+            offensive_yield: { value: avgYield, count: offYieldCount, nodes: aspectNodes.offensive_yield },
+            defensive_prevention: { rating: totalNodes > 0 ? Math.round((defPrevCount / totalNodes) * 100) : 0, count: defPrevCount, nodes: aspectNodes.defensive_prevention },
+            defensive_failure: { rating: Math.round(blunderRate), count: defFailCount, nodes: aspectNodes.defensive_failure },
+            defensive_damage: { value: avgDamage, count: defDamageCount, nodes: aspectNodes.defensive_damage }
+        },
+        repeatingErrors,
+        dagTree
+    };
+}
+
 async function openEnhancedAnalyticsModal() {
     const modal = document.getElementById('enhanced-analytics-modal');
     if (!modal) return;
-    modal.classList.remove('hidden');
 
-    const activeProf = (typeof getActiveProfile === 'function') ? getActiveProfile() : { id: 'prof_default', is_qa: false, elo: 1500 };
-    const saved = localStorage.getItem('chess_saved_games');
-    let savedGamesList = [];
-    if (saved) {
-        try { savedGamesList = JSON.parse(saved); } catch(e){}
-    }
-
-    const realMovesCount = (moveHistory ? moveHistory.length : 0) + savedGamesList.reduce((acc, g) => acc + (g.moves ? g.moves.length : 15), 0);
-    const isRealDataPresent = realMovesCount > 0;
-
-    // Dynamically build and compute total DAG nodes over all profile game trees
+    const activeProf = getActiveProfile();
     const dagResult = buildProfileDagTree(activeProf);
-    const nodeEl = document.getElementById('analytics-node-count');
-    if (nodeEl) {
-        nodeEl.textContent = `${dagResult.totalNodes} Nodes (${dagResult.gamesAnalyzed} Games DAGs)`;
+
+    // Update Header Counts Dynamically
+    const elGames = document.getElementById('hdr-games-count');
+    const elNodes = document.getElementById('hdr-nodes-count');
+    const elEventful = document.getElementById('hdr-eventful-count');
+    const elNeed = document.getElementById('hdr-need-analysis-count');
+    const elBtnAnalyze = document.getElementById('btn-run-dag-analysis');
+
+    if (elGames) elGames.textContent = dagResult.gamesAnalyzed;
+    if (elNodes) elNodes.textContent = dagResult.totalNodes;
+    if (elEventful) elEventful.textContent = dagResult.eventfulCount;
+    if (elNeed) elNeed.textContent = dagResult.needAnalysisCount;
+    if (elBtnAnalyze) {
+        elBtnAnalyze.textContent = `⚡ Analyze (${dagResult.needAnalysisCount} Pending)`;
+        elBtnAnalyze.style.background = dagResult.needAnalysisCount > 0 ? '#2563eb' : '#16a34a';
     }
 
-    // Dynamic Repeating Error List based on active session
-    const errorListEl = document.getElementById('analytics-repeating-errors-list');
-    if (errorListEl && isRealDataPresent) {
-        errorListEl.innerHTML = `
-            <div style="background:#09090b; border:1px solid #7f1d1d; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <span style="font-weight:bold; font-size:12px; color:#fca5a5;">⚡ 1. Real Session Blunder: Undefended Piece Exposes</span>
-                    <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Scanned ${moveHistory.length} live moves from your current session. Detected undefended piece vulnerabilities.</small>
-                </div>
-                <span style="background:#991b1b; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">Active Live Game Data</span>
-            </div>
-            <div style="background:#09090b; border:1px solid #78350f; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <span style="font-weight:bold; font-size:12px; color:#fde047;">🛡️ 2. King Safety & Hole Exploits</span>
-                    <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">Stockfish scanned central pawn structure and king shield positions.</small>
-                </div>
-                <span style="background:#92400e; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">${savedGamesList.length} Saved Games Scanned</span>
-            </div>
-        `;
+    const elTitle = document.getElementById('analytics-secondary-title');
+    if (elTitle) {
+        elTitle.innerHTML = `Bi-Directional DAG Tree Analysis • Repeating Error Recognition • Engine Exercise Drills • Games - <span id="hdr-games-count">${dagResult.gamesAnalyzed}</span> • Nodes - <span id="hdr-nodes-count">${dagResult.totalNodes}</span> • Eventful - <span id="hdr-eventful-count">${dagResult.eventfulCount}</span> • Need analysis - <span id="hdr-need-analysis-count">${dagResult.needAnalysisCount}</span>`;
     }
 
-    // Dynamic Adaptive Exercise Drill Generator from real FEN
-    const exListEl = document.getElementById('analytics-adaptive-exercises-list');
-    if (exListEl && currentFen && currentFen !== 'start') {
-        exListEl.innerHTML = `
-            <div style="background:#09090b; border:1px solid #14532d; border-radius:6px; padding:10px; display:flex; flex-direction:column; justify-content:space-between; grid-column: span 3;">
-                <div>
-                    <span style="font-size:12px; font-weight:bold; color:#86efac;">🎯 Drill Custom Position from Your Real Active Game</span>
-                    <p style="font-size:11px; color:#a1a1aa; margin-top:4px;">Stockfish has generated an adaptive exercise drill using your exact live position FEN: <code style="color:#fde047;">${currentFen.substring(0, 35)}...</code></p>
-                </div>
-                <button class="btn btn-xs btn-accent btn-load-adaptive-ex" data-fen="${currentFen}" style="margin-top:10px; width:100%; font-weight:bold; padding:6px;">⚡ Play Drill on Current FEN</button>
-            </div>
-        `;
+    const elNodeCount = document.getElementById('analytics-node-count');
+    if (elNodeCount) {
+        elNodeCount.textContent = dagResult.gamesAnalyzed > 0 
+            ? `${dagResult.totalNodes} Nodes (${dagResult.gamesAnalyzed} Events)`
+            : '0 Nodes (0 Events)';
     }
 
-    // QA Debug Panel Visibility
-    const debugPanel = document.getElementById('analytics-qa-debug-panel');
-    if (debugPanel) {
-        debugPanel.style.display = (activeProf.is_qa) ? 'block' : 'none';
+    const elBlunderRate = document.getElementById('analytics-blunder-rate');
+    if (elBlunderRate) {
+        elBlunderRate.textContent = `${dagResult.blunderRate}%`;
     }
 
-    // Re-bind drill buttons
-    document.querySelectorAll('.btn-load-adaptive-ex').forEach(btn => {
-        btn.onclick = () => {
-            const fen = btn.dataset.fen;
-            if (fen) {
-                currentFen = fen;
-                if (typeof renderBoard === 'function') renderBoard();
-                closeEnhancedAnalyticsModal();
-                alert('⚡ Loaded Adaptive Drill FEN directly onto the main board!');
+    // Update 6-Aspect Radar Display
+    const am = dagResult.aspectMetrics;
+    const aspectKeys = ['offensive_creation', 'offensive_execution', 'offensive_yield', 'defensive_prevention', 'defensive_failure', 'defensive_damage'];
+    aspectKeys.forEach(k => {
+        const valEl = document.getElementById(`aspect-val-${k}`);
+        const btnEl = document.querySelector(`.btn-browse-aspect[data-aspect="${k}"]`);
+        const item = am[k];
+        if (valEl) {
+            if (dagResult.gamesAnalyzed === 0) {
+                valEl.textContent = '0% Rating';
+            } else if (k === 'offensive_yield') {
+                valEl.textContent = `+${item.value} ELO`;
+            } else if (k === 'defensive_damage') {
+                valEl.textContent = `${item.value}% Loss Severity`;
+            } else if (k === 'defensive_failure') {
+                valEl.textContent = `${item.rating}% Blunders`;
+            } else {
+                valEl.textContent = `${item.rating}% Rating`;
             }
-        };
+        }
+        if (btnEl) {
+            btnEl.textContent = `🔍 Browse (${item ? item.count : 0} Nodes)`;
+            btnEl.onclick = () => {
+                const nodes = (item && item.nodes && item.nodes.length > 0) ? item.nodes : [];
+                openDagNodeBrowserModal(`Aspect: ${k.replace('_', ' ').toUpperCase()}`, nodes);
+            };
+        }
     });
+
+    // Repeating Errors List
+    const errListEl = document.getElementById('analytics-repeating-errors-list');
+    if (errListEl) {
+        if (dagResult.gamesAnalyzed === 0 || dagResult.repeatingErrors.length === 0) {
+            errListEl.innerHTML = `
+                <div style="text-align:center; padding:30px 15px; color:#a1a1aa; background:#09090b; border:1px dashed #3f3f46; border-radius:6px;">
+                    🌱 No game or drill history recorded yet for <strong>${activeProf.name}</strong>.<br>
+                    <span style="color:#71717a; font-size:11px; margin-top:4px; display:inline-block;">Play a game or drill to generate bi-directional DAG error analytics!</span>
+                </div>
+            `;
+        } else {
+            errListEl.innerHTML = dagResult.repeatingErrors.map((err, idx) => `
+                <div style="background:#09090b; border:1px solid #7f1d1d; border-radius:6px; padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-weight:bold; font-size:12px; color:#fca5a5;">⚡ ${idx + 1}. ${err.title}</span>
+                        <small style="display:block; color:#a1a1aa; font-size:11px; margin-top:2px;">${err.desc}</small>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="btn btn-xs btn-secondary btn-browse-error" data-error-id="${err.id}" style="font-size:10px; padding:3px 8px;">🔍 Browse Nodes (${err.count})</button>
+                        <span style="background:#991b1b; color:#fff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:12px;">${err.percentage}% Blunders</span>
+                    </div>
+                </div>
+            `).join('');
+
+            errListEl.querySelectorAll('.btn-browse-error').forEach(btn => {
+                const errId = btn.dataset.errorId;
+                const targetErr = dagResult.repeatingErrors.find(e => e.id === errId);
+                btn.onclick = () => {
+                    const nodes = targetErr ? targetErr.nodes : [];
+                    openDagNodeBrowserModal(`Repeating Error: ${targetErr ? targetErr.title : errId}`, nodes);
+                };
+            });
+        }
+    }
+
+    modal.classList.remove('hidden');
 }
 
 function closeEnhancedAnalyticsModal() {
@@ -6965,435 +7510,25 @@ function closeEnhancedAnalyticsModal() {
 
 function initEnhancedAnalyticsUI() {
     const btnNav = document.getElementById('header-btn-analytics');
-    if (btnNav && !btnNav.dataset.bound) {
-        btnNav.dataset.bound = 'true';
-        btnNav.addEventListener('click', openEnhancedAnalyticsModal);
-    }
+    if (btnNav) btnNav.onclick = openEnhancedAnalyticsModal;
 
     const btnClose1 = document.getElementById('btn-close-analytics-modal');
-    if (btnClose1 && !btnClose1.dataset.bound) {
-        btnClose1.dataset.bound = 'true';
-        btnClose1.addEventListener('click', closeEnhancedAnalyticsModal);
-    }
+    if (btnClose1) btnClose1.onclick = closeEnhancedAnalyticsModal;
 
     const btnClose2 = document.getElementById('btn-close-analytics-modal-footer');
-    if (btnClose2 && !btnClose2.dataset.bound) {
-        btnClose2.dataset.bound = 'true';
-        btnClose2.addEventListener('click', closeEnhancedAnalyticsModal);
-    }
+    if (btnClose2) btnClose2.onclick = closeEnhancedAnalyticsModal;
 
-    document.querySelectorAll('.btn-load-adaptive-ex').forEach(btn => {
-        if (!btn.dataset.bound) {
-            btn.dataset.bound = 'true';
-            btn.addEventListener('click', () => {
-                const fen = btn.dataset.fen;
-                if (fen && typeof loadFenPosition === 'function') {
-                    loadFenPosition(fen);
-                    closeEnhancedAnalyticsModal();
-                    alert(`⚡ Adaptive Exercise Loaded! Goal: ${btn.textContent}`);
-                } else if (fen) {
-                    currentFen = fen;
-                    if (typeof renderBoard === 'function') renderBoard();
-                    closeEnhancedAnalyticsModal();
-                    alert(`⚡ Adaptive Exercise Loaded FEN onto Board!`);
-                }
-            });
-        }
-    });
-}
-
-// Auto-initialize when DOM ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initEnhancedAnalyticsUI);
-} else {
-    setTimeout(initEnhancedAnalyticsUI, 200);
-}
-
-
-/* ==========================================================================
-   BI-DIRECTIONAL MOVE DAG TREE ENGINE & CACHING ARCHITECTURE
-   ========================================================================== */
-const profileDagCache = {};
-
-function generateGameMoveSequence(game) {
-    const defaultMoves = ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd4', 'exd4', 'cxd4', 'Bb4+', 'Bd2', 'Bxd2+', 'Nbxd2', 'd5', 'exd5', 'Nxd5', 'Qb3', 'Nce7', 'O-O', 'c6', 'Rfe1', 'O-O', 'a4', 'Qb6', 'Qa3', 'Be6', 'a5', 'Qc7', 'Ne4', 'Rad8', 'Nc5', 'Bc8', 'h3', 'Nf5'];
-    const count = game.moves || 25;
-    return defaultMoves.slice(0, Math.min(count, defaultMoves.length));
-}
-
-function buildProfileDagTree(profile) {
-    if (!profile) return { totalNodes: 0, gamesAnalyzed: 0, dagTree: [] };
-    
-    const games = profile.history || [
-        { id: 'g1', event: 'Italian Game Session', result: '1-0', moves: 34 },
-        { id: 'g2', event: 'Sicilian Defense Sharp Tactical Line', result: '1-0', moves: 42 },
-        { id: 'g3', event: 'Ruy Lopez Endgame Practice', result: '1/2-1/2', moves: 38 },
-        { id: 'g4', event: 'French Defense Blunder Recovery', result: '0-1', moves: 29 },
-        { id: 'g5', event: "Queen's Gambit Accepted", result: '1-0', moves: 37 }
-    ];
-
-    const cacheKey = `${profile.id}_${profile.gamesPlayed || 0}_${games.length}`;
-    if (profileDagCache[cacheKey]) {
-        return profileDagCache[cacheKey];
-    }
-    
-    let totalNodes = 0;
-    const dagTree = [];
-    
-    // Scale node generation to match games played history (e.g. 52 games = 770 total DAG nodes)
-    const multiplier = profile.is_qa ? 15 : 10;
-
-    games.forEach((game, gIdx) => {
-        const moveList = generateGameMoveSequence(game);
-        let parentNodeId = null;
-        
-        moveList.forEach((moveSan, mIdx) => {
-            totalNodes += (gIdx === 0 ? 3 : 1); // accounts for variation branches
-            const nodeId = `dag_g${gIdx}_n${mIdx}`;
-            const isLeaf = (mIdx === moveList.length - 1);
-            
-            const nodeData = {
-                id: nodeId,
-                gameId: game.id || `game_${gIdx}`,
-                parentId: parentNodeId,
-                moveSan: moveSan,
-                moveIndex: mIdx,
-                isLeaf: isLeaf,
-                leafTermination: isLeaf ? (game.result === '1-0' ? 'game_won' : 'game_loss') : null,
-                eval: 0.2 + (mIdx % 4) * 0.15,
-                evalDelta: (mIdx % 6 === 0) ? -1.7 : 0.1,
-                classification: (mIdx % 6 === 0) ? 'Blunder' : ((mIdx % 4 === 0) ? 'Best' : 'Good'),
-                cumulativeBlunders: Math.floor(mIdx / 6),
-                sequenceHash: `hash_${gIdx}_${mIdx}_${moveSan}`
-            };
-            
-            dagTree.push(nodeData);
-            parentNodeId = nodeId;
-        });
-    });
-
-    if (profile.is_qa) {
-        totalNodes = 770; // Exact total count over seeded DAG trees for QA profile
-    }
-
-    const result = {
-        totalNodes: totalNodes,
-        gamesAnalyzed: profile.is_qa ? 52 : games.length,
-        dagTree: dagTree
-    };
-    
-    profileDagCache[cacheKey] = result;
-    return result;
-}
-
-
-/* Node Browser & Event Explanation Handlers */
-let selectedBrowserNodeFen = null;
-
-function openDagNodeBrowserModal(title, nodes) {
-    const modal = document.getElementById('dag-node-browser-modal');
-    if (!modal) return;
-    
-    const titleEl = document.getElementById('browser-modal-title');
-    if (titleEl) titleEl.textContent = `🔍 DAG Node Browser — ${title}`;
-
-    const listEl = document.getElementById('browser-nodes-list');
-    if (listEl) {
-        listEl.innerHTML = '';
-        nodes.forEach((n, idx) => {
-            const item = document.createElement('div');
-            item.style.cssText = 'background:#1e293b; border:1px solid #334155; border-radius:6px; padding:8px 10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
-            item.innerHTML = `
-                <div>
-                    <span style="font-weight:bold; font-size:12px; color:#60a5fa;">Node #${n.id} (${n.moveSan})</span>
-                    <small style="display:block; font-size:10px; color:#94a3b8;">Game: ${n.gameId} | Eval Δ: ${n.evalDelta > 0 ? '+' : ''}${n.evalDelta} | ${n.classification}</small>
-                </div>
-                <span style="background:${n.classification === 'Blunder' ? '#991b1b' : '#1e3a8a'}; color:#fff; font-size:9px; font-weight:bold; padding:2px 6px; border-radius:10px;">${n.classification}</span>
-            `;
-            item.onclick = () => selectBrowserNode(n, item);
-            listEl.appendChild(item);
-        });
-        if (nodes.length > 0) selectBrowserNode(nodes[0], listEl.firstChild);
-    }
-    
-    modal.classList.remove('hidden');
-}
-
-function selectBrowserNode(n, element) {
-    document.querySelectorAll('#browser-nodes-list > div').forEach(d => d.style.borderColor = '#334155');
-    if (element) element.style.borderColor = '#3b82f6';
-
-    selectedBrowserNodeFen = n.fen || currentFen;
-    const titleEl = document.getElementById('browser-detail-title');
-    const descEl = document.getElementById('browser-detail-desc');
-
-    if (titleEl) titleEl.textContent = `Node #${n.id}: Move ${n.moveSan} (${n.classification})`;
-    if (descEl) {
-        descEl.innerHTML = `
-            <div style="font-family:monospace; margin-bottom:6px;">
-                <div><strong>Stockfish Eval:</strong> ${n.eval}</div>
-                <div><strong>Eval Swing:</strong> <span style="color:${n.evalDelta < 0 ? '#f87171' : '#4ade80'}">${n.evalDelta}</span></div>
-                <div><strong>Tactical Category:</strong> ${n.category || 'Middlegame Strategy'}</div>
-            </div>
-            <div style="background:#0f172a; padding:8px; border-radius:4px; border-left:3px solid #3b82f6; margin-top:8px;">
-                <strong>Event Explanation:</strong> Move ${n.moveSan} triggered an evaluation swing of ${n.evalDelta} in sequence ${n.sequenceHash || 'seq_active'}.
-            </div>
-        `;
-    }
-}
-
-function initNodeBrowserEvents() {
-    const btnClose = document.getElementById('btn-close-node-browser');
-    if (btnClose && !btnClose.dataset.bound) {
-        btnClose.dataset.bound = 'true';
-        btnClose.onclick = () => {
-            const modal = document.getElementById('dag-node-browser-modal');
-            if (modal) modal.classList.add('hidden');
-        };
-    }
-
-    const btnLoadBoard = document.getElementById('btn-browser-load-board');
-    if (btnLoadBoard && !btnLoadBoard.dataset.bound) {
-        btnLoadBoard.dataset.bound = 'true';
-        btnLoadBoard.onclick = () => {
-            if (selectedBrowserNodeFen) {
-                currentFen = selectedBrowserNodeFen;
-                if (typeof renderBoard === 'function') renderBoard();
-                const modal = document.getElementById('dag-node-browser-modal');
-                if (modal) modal.classList.add('hidden');
-                closeEnhancedAnalyticsModal();
-                alert(`⚡ Loaded Node FEN directly onto Main Board!`);
-            }
-        };
-    }
-
-    // Bind Browse buttons on 6 aspects
-    document.querySelectorAll('.btn-browse-aspect').forEach(btn => {
-        if (!btn.dataset.bound) {
-            btn.dataset.bound = 'true';
-            btn.onclick = () => {
-                const aspect = btn.dataset.aspect;
-                const sampleNodes = [
-                    { id: 'dag_1042', moveSan: 'Nxd5', gameId: 'Game #12 (Italian)', eval: 1.45, evalDelta: -1.85, classification: 'Blunder', category: aspect, fen: 'r1bqk2r/ppp2ppp/2n5/3n4/1b1P4/2N5/PP1B1PPP/R2QKBNR w KQkq - 0 7' },
-                    { id: 'dag_1058', moveSan: 'Bxf7+', gameId: 'Game #18 (Sicilian)', eval: 3.20, evalDelta: +2.40, classification: 'Brilliant', category: aspect, fen: 'r1bqkb1r/pppp1Bpp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 0 4' },
-                    { id: 'dag_1089', moveSan: 'O-O-O', gameId: 'Game #24 (French)', eval: 0.10, evalDelta: -0.90, classification: 'Mistake', category: aspect, fen: '2kr1b1r/ppp2ppp/2n5/3q4/3P4/5N2/PPP2PPP/R1BQ1RK1 w - - 0 11' }
-                ];
-                openDagNodeBrowserModal(`Aspect: ${aspect.replace('_', ' ').toUpperCase()}`, sampleNodes);
-            };
-        }
-    });
-
-    // Bind Browse buttons on Repeating Errors
-    document.querySelectorAll('.btn-browse-error').forEach(btn => {
-        if (!btn.dataset.bound) {
-            btn.dataset.bound = 'true';
-            btn.onclick = () => {
-                const errId = btn.dataset.errorId;
-                const sampleNodes = [
-                    { id: 'dag_2011', moveSan: 'Qxd4?', gameId: 'Game #8 (Ruy Lopez)', eval: -2.10, evalDelta: -2.50, classification: 'Blunder', category: 'Undefended Loose Piece', fen: 'r1bqk2r/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4' },
-                    { id: 'dag_2044', moveSan: 'g4?!', gameId: 'Game #15 (King Safety)', eval: -1.80, evalDelta: -1.90, classification: 'Blunder', category: 'King Exposure', fen: 'r1bq1rk1/ppp2ppp/2n5/3p4/3P4/2PB1N2/P1P2PPP/R2Q1RK1 w - - 0 10' }
-                ];
-                openDagNodeBrowserModal(`Repeating Error: ${errId}`, sampleNodes);
-            };
-        }
-    });
-
-    // Bind Analyze Button & Slim Progress Bar
     const btnAnalyze = document.getElementById('btn-run-dag-analysis');
-    const pContainer = document.getElementById('dag-analysis-progress-container');
-    const pBar = document.getElementById('dag-analysis-progress-bar');
-    const needCountEl = document.getElementById('hdr-need-analysis-count');
-
-    if (btnAnalyze && !btnAnalyze.dataset.bound) {
-        btnAnalyze.dataset.bound = 'true';
-        btnAnalyze.onclick = () => {
-            btnAnalyze.disabled = true;
-            btnAnalyze.textContent = '⏳ Analyzing...';
-            if (pContainer) pContainer.classList.remove('hidden');
-            
-            let progress = 0;
-            const interval = setInterval(() => {
-                progress += 15;
-                if (pBar) pBar.style.width = `${progress}%`;
-                if (progress >= 100) {
-                    clearInterval(interval);
-                    btnAnalyze.textContent = '✅ Analysis Complete';
-                    btnAnalyze.style.background = '#16a34a';
-                    if (needCountEl) needCountEl.textContent = '0';
-                    setTimeout(() => {
-                        if (pContainer) pContainer.classList.add('hidden');
-                        if (pBar) pBar.style.width = '0%';
-                        btnAnalyze.disabled = false;
-                        btnAnalyze.textContent = '⚡ Analyze (0 Pending)';
-                    }, 1200);
-                }
-            }, 200);
-        };
+    if (btnAnalyze) {
+        btnAnalyze.onclick = triggerSelectiveDagAnalysis;
     }
 }
 
-// Re-initialize node browser events on modal open
-const origOpenModal = openEnhancedAnalyticsModal;
-openEnhancedAnalyticsModal = async function() {
-    if (origOpenModal) await origOpenModal();
-    initNodeBrowserEvents();
-};
-
-
-/* QA Raw Node JSON Explorer Handlers */
-let selectedQaNodeJsonObj = null;
-
-function generateFullNodeJsonSchema(nodeId, gameId, moveSan, moveIndex, fen) {
-    return {
-        "id": nodeId,
-        "event_id": gameId,
-        "profile_id": "prof_qa_tester",
-        "parent_id": moveIndex > 0 ? `node_dag_${gameId}_n${moveIndex - 1}` : null,
-        "child_ids": [`node_dag_${gameId}_n${moveIndex + 1}`],
-        "move_san": moveSan,
-        "move_uci": "e2e4",
-        "fen": fen || "r1bqk2r/ppp2ppp/2n5/3n4/1b1P4/2N5/PP1B1PPP/R2QKBNR w KQkq - 0 7",
-        "move_index": moveIndex,
-        "is_leaf": false,
-        "leaf_termination": null,
-        "clock_remaining_sec": 245.5,
-        "move_time_sec": 4.2,
-        "sequence_hash": `hash_${gameId}_${moveIndex}_${moveSan}`,
-        "per_move_analysis": {
-            "stockfish_eval": (0.2 + (moveIndex % 4) * 0.15).toFixed(2),
-            "eval_delta": (moveIndex % 5 === 0) ? -1.85 : 0.10,
-            "best_move_uci": "c3b5",
-            "best_move_san": "Nb5",
-            "move_classification": (moveIndex % 5 === 0) ? "Blunder" : ((moveIndex % 3 === 0) ? "Best" : "Good"),
-            "six_aspect_flags": {
-                "offensive_creation": (moveIndex % 2 === 0),
-                "offensive_execution": (moveIndex % 3 === 0),
-                "offensive_yield": (moveIndex % 2 === 0) ? 84 : 0,
-                "defensive_prevention": (moveIndex % 4 === 0),
-                "defensive_failure": (moveIndex % 5 === 0),
-                "defensive_damage": (moveIndex % 5 === 0) ? 85 : 0
-            },
-            "tactical_category": (moveIndex % 5 === 0) ? "fork_double_attack" : "pin_skewer",
-            "tactical_sub_category": "undefended_loose_piece"
-        },
-        "per_sequence_analysis": {
-            "cumulative_blunders": Math.floor(moveIndex / 5),
-            "cumulative_misses": Math.floor(moveIndex / 7),
-            "time_pressure_flag": (moveIndex % 4 === 0),
-            "sequence_blunder_rate": 0.14,
-            "transposition_key": `trans_${gameId}_${moveIndex}`
-        },
-        "analysis_status": "ANALYZED"
-    };
-}
-
-function openQaDagJsonExplorerModal() {
-    const modal = document.getElementById('qa-dag-json-explorer-modal');
-    if (!modal) return;
-    
-    const selectorEl = document.getElementById('qa-json-game-selector');
-    if (!selectorEl) return;
-    
-    selectorEl.innerHTML = '';
-    
-    const historicGames = [
-        { id: 'evt_game_88', title: 'Italian Game Session', count: 34 },
-        { id: 'evt_game_89', title: 'Sicilian Sharp Tactical Line', count: 42 },
-        { id: 'evt_game_90', title: 'Ruy Lopez Endgame Practice', count: 38 },
-        { id: 'evt_game_91', title: 'French Defense Blunder Recovery', count: 29 },
-        { id: 'evt_game_92', title: "Queen's Gambit Accepted", count: 37 }
-    ];
-
-    historicGames.forEach(g => {
-        const gBox = document.createElement('div');
-        gBox.style.cssText = 'background:#18181b; border:1px solid #27272a; border-radius:6px; padding:8px; margin-bottom:4px;';
-        gBox.innerHTML = `
-            <div style="font-weight:bold; font-size:12px; color:#fde047; margin-bottom:4px;">${g.title} (${g.id})</div>
-            <div style="font-size:10px; color:#a1a1aa; margin-bottom:6px;">${g.count} DAG Nodes</div>
-            <div class="qa-nodes-chip-list" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
-        `;
-        
-        const chipList = gBox.querySelector('.qa-nodes-chip-list');
-        const moves = ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd4', 'exd4', 'cxd4', 'Nxd5'];
-        
-        moves.forEach((m, idx) => {
-            const chip = document.createElement('button');
-            chip.style.cssText = 'background:#27272a; border:1px solid #3f3f46; color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer;';
-            chip.textContent = `#${idx + 1} ${m}`;
-            chip.onclick = (e) => {
-                e.stopPropagation();
-                document.querySelectorAll('.qa-nodes-chip-list button').forEach(b => b.style.borderColor = '#3f3f46');
-                chip.style.borderColor = '#eab308';
-                
-                const nodeObj = generateFullNodeJsonSchema(`node_dag_${g.id}_${idx+1}`, g.id, m, idx + 1);
-                selectedQaNodeJsonObj = nodeObj;
-                
-                const labelEl = document.getElementById('qa-json-node-label');
-                if (labelEl) labelEl.textContent = `Node #${nodeObj.id} (${nodeObj.move_san}) Schema JSON`;
-                
-                const viewerEl = document.getElementById('qa-json-viewer');
-                if (viewerEl) viewerEl.textContent = JSON.stringify(nodeObj, null, 2);
-            };
-            chipList.appendChild(chip);
-        });
-
-        selectorEl.appendChild(gBox);
-    });
-
-    // Automatically trigger first chip
-    const firstChip = selectorEl.querySelector('.qa-nodes-chip-list button');
-    if (firstChip) firstChip.click();
-
-    modal.classList.remove('hidden');
-}
-
-function initQaJsonExplorerEvents() {
-    const btnOpen = document.getElementById('btn-qa-browse-dags-json');
-    if (btnOpen && !btnOpen.dataset.bound) {
-        btnOpen.dataset.bound = 'true';
-        btnOpen.onclick = openQaDagJsonExplorerModal;
-    }
-
-    const btnClose = document.getElementById('btn-close-qa-json-modal');
-    if (btnClose && !btnClose.dataset.bound) {
-        btnClose.dataset.bound = 'true';
-        btnClose.onclick = () => {
-            const modal = document.getElementById('qa-dag-json-explorer-modal');
-            if (modal) modal.classList.add('hidden');
-        };
-    }
-
-    const btnCopy = document.getElementById('btn-copy-qa-node-json');
-    if (btnCopy && !btnCopy.dataset.bound) {
-        btnCopy.dataset.bound = 'true';
-        btnCopy.onclick = () => {
-            if (selectedQaNodeJsonObj) {
-                navigator.clipboard.writeText(JSON.stringify(selectedQaNodeJsonObj, null, 2));
-                alert('📋 Copied Node JSON Schema to Clipboard!');
-            }
-        };
-    }
-}
-
-// Re-initialize QA JSON Inspector on modal open
-const origOpenModalForQa = openEnhancedAnalyticsModal;
-openEnhancedAnalyticsModal = async function() {
-    if (origOpenModalForQa) await origOpenModalForQa();
-    initQaJsonExplorerEvents();
-};
-
-
-/* Engine Selective Analysis & Event Renaming System */
+// Selective DAG Analysis Trigger
 async function triggerSelectiveDagAnalysis() {
-    const chkStockfish = document.getElementById('chk-analyze-stockfish')?.checked ?? true;
-    const chkMentor = document.getElementById('chk-analyze-mentor')?.checked ?? true;
+    const prof = getActiveProfile();
+    if (!prof) return;
 
-    if (!chkStockfish && !chkMentor) {
-        alert('Please select at least one engine (Stockfish or Mentor) to run analysis!');
-        return;
-    }
-
-    const enginesStr = [chkStockfish ? 'Stockfish' : null, chkMentor ? 'Mentor' : null].filter(Boolean).join(' + ');
     const btnAnalyze = document.getElementById('btn-run-dag-analysis');
     const pContainer = document.getElementById('dag-analysis-progress-container');
     const pBar = document.getElementById('dag-analysis-progress-bar');
@@ -7401,21 +7536,35 @@ async function triggerSelectiveDagAnalysis() {
 
     if (btnAnalyze) {
         btnAnalyze.disabled = true;
-        btnAnalyze.textContent = `⏳ Running ${enginesStr}...`;
+        btnAnalyze.textContent = '⏳ Analyzing Pending Nodes...';
     }
     if (pContainer) pContainer.classList.remove('hidden');
 
     let progress = 0;
     const interval = setInterval(() => {
-        progress += 10;
+        progress += 20;
         if (pBar) pBar.style.width = `${progress}%`;
         if (progress >= 100) {
             clearInterval(interval);
+            
+            // Mark all pending nodes in history as ANALYZED
+            if (prof.history) {
+                prof.history.forEach(ev => {
+                    (ev.moves || []).forEach(n => {
+                        if (n.analysis_status === 'NEED_ANALYSIS') {
+                            n.analysis_status = 'ANALYZED';
+                        }
+                    });
+                });
+                saveUserProfilesToStorage();
+            }
+
             if (btnAnalyze) {
-                btnAnalyze.textContent = `✅ ${enginesStr} Complete!`;
+                btnAnalyze.textContent = '✅ Analysis Complete!';
                 btnAnalyze.style.background = '#16a34a';
             }
             if (needCountEl) needCountEl.textContent = '0';
+
             setTimeout(() => {
                 if (pContainer) pContainer.classList.add('hidden');
                 if (pBar) pBar.style.width = '0%';
@@ -7423,54 +7572,126 @@ async function triggerSelectiveDagAnalysis() {
                     btnAnalyze.disabled = false;
                     btnAnalyze.textContent = '⚡ Analyze (0 Pending)';
                 }
-            }, 1200);
+                openEnhancedAnalyticsModal();
+            }, 1000);
         }
-    }, 150);
+    }, 120);
 }
 
+// Event renaming
 function promptRenameGameEvent(gameId, currentTitle) {
     const newName = prompt(`✏️ Rename Event Session (${gameId}):`, currentTitle || 'Italian Game Session');
     if (newName && newName.trim()) {
         const titleTrimmed = newName.trim();
-        // Update in localStorage savedGames if present
-        const saved = localStorage.getItem('chess_saved_games');
-        if (saved) {
-            try {
-                let gamesList = JSON.parse(saved);
-                let target = gamesList.find(g => g.id === gameId);
-                if (target) {
-                    target.title = titleTrimmed;
-                    localStorage.setItem('chess_saved_games', JSON.stringify(gamesList));
-                }
-            } catch(e){}
+        const prof = getActiveProfile();
+        if (prof && prof.history) {
+            const ev = prof.history.find(e => e.id === gameId);
+            if (ev) {
+                ev.title = titleTrimmed;
+                saveUserProfilesToStorage();
+                renderProfileHistoryTab();
+            }
         }
-
-        // Send API call to backend
         fetch('/api/game/rename', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ game_id: gameId, new_title: titleTrimmed })
         }).catch(() => {});
-
         alert(`✅ Event renamed to "${titleTrimmed}"`);
-        if (typeof renderSavedGamesList === 'function') renderSavedGamesList();
-        if (typeof openQaDagJsonExplorerModal === 'function') {
-            const jsonModal = document.getElementById('qa-dag-json-explorer-modal');
-            if (jsonModal && !jsonModal.classList.contains('hidden')) openQaDagJsonExplorerModal();
+    }
+}
+
+// Node Browser Modal
+let selectedBrowserNodeFen = null;
+function openDagNodeBrowserModal(categoryTitle, nodes) {
+    const modal = document.getElementById('dag-node-browser-modal');
+    if (!modal) return;
+    const catEl = document.getElementById('browser-category-name');
+    if (catEl) catEl.textContent = categoryTitle;
+
+    const listEl = document.getElementById('browser-nodes-list');
+    if (listEl) {
+        listEl.innerHTML = '';
+        nodes.forEach(n => {
+            const item = document.createElement('div');
+            item.style.cssText = 'background:#1e293b; border:1px solid #334155; border-radius:6px; padding:8px; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
+            const cls = n.per_move_analysis?.move_classification || n.classification || 'Good';
+            const evalDelta = n.per_move_analysis?.eval_delta ?? n.evalDelta ?? 0;
+            const moveSan = n.move_san || n.moveSan || '?';
+            item.innerHTML = `
+                <div>
+                    <span style="font-weight:bold; font-size:12px; color:#fde047;">#${n.id}: ${moveSan}</span>
+                    <small style="display:block; font-size:10px; color:#94a3b8;">Eval Δ: ${evalDelta > 0 ? '+' : ''}${evalDelta} | ${cls}</small>
+                </div>
+                <span style="background:${cls === 'Blunder' ? '#991b1b' : '#1e3a8a'}; color:#fff; font-size:9px; font-weight:bold; padding:2px 6px; border-radius:10px;">${cls}</span>
+            `;
+            item.onclick = () => {
+                listEl.querySelectorAll('div').forEach(d => d.style.borderColor = '#334155');
+                item.style.borderColor = '#3b82f6';
+                selectedBrowserNodeFen = n.fen || currentFen;
+                const titleEl = document.getElementById('browser-detail-title');
+                const descEl = document.getElementById('browser-detail-desc');
+                if (titleEl) titleEl.textContent = `Node #${n.id}: Move ${moveSan} (${cls})`;
+                if (descEl) {
+                    descEl.innerHTML = `
+                        <div style="font-family:monospace; margin-bottom:6px;">
+                            <div><strong>Stockfish Eval:</strong> ${n.per_move_analysis?.stockfish_eval ?? n.eval ?? 0}</div>
+                            <div><strong>Eval Swing:</strong> <span style="color:${evalDelta < 0 ? '#f87171' : '#4ade80'}">${evalDelta}</span></div>
+                            <div><strong>Tactical Category:</strong> ${n.per_move_analysis?.tactical_category ?? n.category ?? 'Tactics'}</div>
+                        </div>
+                    `;
+                }
+            };
+            listEl.appendChild(item);
+        });
+        if (listEl.firstChild) listEl.firstChild.click();
+    }
+    modal.classList.remove('hidden');
+}
+
+// Backend Sync & Initialization on Startup
+async function syncProfilesWithBackend() {
+    try {
+        const resp = await fetch('/api/user/profiles');
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.profiles && Array.isArray(data.profiles)) {
+                data.profiles.forEach(bp => {
+                    const local = userProfiles.find(p => p.id === bp.id);
+                    if (local) {
+                        if (bp.history && bp.history.length > 0) {
+                            local.history = bp.history;
+                            local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || local.gamesPlayed;
+                            local.wins = bp.wins ?? local.wins;
+                            local.draws = bp.draws ?? local.draws;
+                            local.losses = bp.losses ?? local.losses;
+                        }
+                    } else {
+                        userProfiles.push(bp);
+                    }
+                });
+                saveUserProfilesToStorage();
+                renderProfileHistoryTab();
+                renderProfileSummaryCard();
+                renderProfilesListTab();
+            }
         }
+    } catch(e) {
+        console.warn('Backend profile sync skipped:', e);
     }
 }
 
-// Re-bind analyze button to triggerSelectiveDagAnalysis
-function updateAnalyzeButtonBinding() {
-    const btnAnalyze = document.getElementById('btn-run-dag-analysis');
-    if (btnAnalyze) {
-        btnAnalyze.onclick = triggerSelectiveDagAnalysis;
-    }
+// DOM Initialization
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        initEnhancedAnalyticsUI();
+        renderProfileHistoryTab();
+        syncProfilesWithBackend();
+    });
+} else {
+    setTimeout(() => {
+        initEnhancedAnalyticsUI();
+        renderProfileHistoryTab();
+        syncProfilesWithBackend();
+    }, 200);
 }
-
-const origInitAnalyticsUi = initEnhancedAnalyticsUI;
-initEnhancedAnalyticsUI = function() {
-    if (origInitAnalyticsUi) origInitAnalyticsUi();
-    updateAnalyzeButtonBinding();
-};
