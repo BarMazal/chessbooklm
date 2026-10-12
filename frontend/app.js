@@ -3512,32 +3512,90 @@ function renderSavedGamesList() {
     if (!listEl) return;
     listEl.innerHTML = '';
 
-    if (savedGames.length === 0) {
-        listEl.innerHTML = '<p class="placeholder-text">No saved games yet. Save your current game above!</p>';
+    const prof = getActiveProfile();
+    const profHistory = (prof && prof.history) ? prof.history : [];
+
+    const allGames = [];
+    (savedGames || []).forEach(g => {
+        allGames.push({
+            id: g.id,
+            title: g.title,
+            date: g.date || 'Custom',
+            movesCount: g.moves ? g.moves.length : 0,
+            notes: g.notes || 'Saved Custom Game',
+            isSavedGame: true,
+            rawGame: g
+        });
+    });
+
+    profHistory.forEach(ev => {
+        allGames.push({
+            id: ev.id,
+            title: ev.title,
+            date: ev.startedAt ? new Date(ev.startedAt).toLocaleDateString() : 'Recent',
+            movesCount: ev.moves ? ev.moves.length : 0,
+            notes: `${(ev.type || 'game').toUpperCase()} • Result: ${ev.result || 'Finished'}${ev.goal ? ' • Goal: ' + ev.goal : ''}`,
+            isSavedGame: false,
+            rawEvent: ev
+        });
+    });
+
+    if (allGames.length === 0) {
+        listEl.innerHTML = `<p class="placeholder-text">No recorded games yet for ${prof.name}. Play a game or save your current game above!</p>`;
         return;
     }
 
-    savedGames.forEach(g => {
+    allGames.forEach(g => {
         const card = document.createElement('div');
         card.className = 'saved-game-card';
         card.innerHTML = `
             <div class="saved-game-info">
                 <span class="saved-game-title">${g.title}</span>
-                <span class="saved-game-meta">📅 ${g.date} | ♟️ ${g.moves ? g.moves.length : 0} moves ${g.notes ? '| 📝 ' + g.notes : ''}</span>
+                <span class="saved-game-meta">📅 ${g.date} | ♟️ ${g.movesCount} moves | 📝 ${g.notes}</span>
             </div>
             <div class="saved-game-actions">
-                <button class="btn btn-secondary btn-sm" data-action="load" data-id="${g.id}">▶️ Load</button>
-                <button class="btn btn-secondary btn-sm" data-action="export" data-id="${g.id}">📥 PGN</button>
-                <button class="btn btn-secondary btn-sm" data-action="delete" data-id="${g.id}">🗑️</button>
+                <button class="btn btn-secondary btn-sm" data-action="load">▶️ Load</button>
+                ${g.isSavedGame ? `<button class="btn btn-secondary btn-sm" data-action="delete">🗑️</button>` : ''}
             </div>
         `;
 
-        card.querySelector('[data-action="load"]').addEventListener('click', () => loadSavedGame(g.id));
-        card.querySelector('[data-action="export"]').addEventListener('click', () => exportSavedGamePgn(g.id));
-        card.querySelector('[data-action="delete"]').addEventListener('click', () => deleteSavedGame(g.id));
+        card.querySelector('[data-action="load"]').addEventListener('click', async () => {
+            if (g.isSavedGame) {
+                await loadSavedGame(g.id);
+            } else if (g.rawEvent) {
+                await loadProfileEventToBoard(g.rawEvent);
+            }
+            const modal = document.getElementById('game-manager-modal');
+            if (modal) modal.classList.add('hidden');
+        });
+
+        if (g.isSavedGame) {
+            const delBtn = card.querySelector('[data-action="delete"]');
+            if (delBtn) delBtn.addEventListener('click', () => deleteSavedGame(g.id));
+        }
 
         listEl.appendChild(card);
     });
+}
+
+async function loadProfileEventToBoard(ev) {
+    if (!ev || !ev.moves || ev.moves.length === 0) return;
+    moveHistory = [];
+    moveStackUci = [];
+    startFen = ev.startingFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    currentFen = startFen;
+
+    const mainlineMoves = ev.moves.filter(m => m.branch_id === 'mainline');
+    mainlineMoves.forEach(m => {
+        moveHistory.push(m.move_san);
+        moveStackUci.push(m.move_uci);
+    });
+
+    parseFenToState(currentFen);
+    initBoard();
+    renderBoard();
+    renderMoveHistoryTable();
+    await updatePositionEvaluation();
 }
 
 async function loadSavedGame(gameId) {
@@ -3885,6 +3943,10 @@ function loadUserProfilesFromStorage() {
                 } else if (defProf.id === 'prof_qa_tester') {
                     existing.is_qa = true;
                     if (!existing.gamesPlayed) existing.gamesPlayed = 52;
+                    // If local history is empty or missing, ensure it will sync
+                    if (!existing.history || existing.history.length === 0) {
+                        existing.history = [];
+                    }
                 }
             });
         } catch (e) {
@@ -6949,6 +7011,7 @@ if (btnReturnLiveInit) {
 // 🔴 LIVE ON-THE-FLY GAME RECORDING
 // ==========================================
 function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
+    if (!moveHistory || moveHistory.length === 0) return;
     const prof = getActiveProfile();
     if (!prof) return;
     if (!prof.history) prof.history = [];
@@ -7272,6 +7335,7 @@ function buildProfileDagTree(profile) {
     let totalNodes = 0;
     let eventfulCount = 0;
     let needAnalysisCount = 0;
+    let timePressureCount = 0;
     let defFailCount = 0;
     let offCreationCount = 0;
     let offExecutionCount = 0;
@@ -7299,6 +7363,9 @@ function buildProfileDagTree(profile) {
             const st = n.analysis_status;
             if (st === 'NEED_ANALYSIS') {
                 needAnalysisCount++;
+            }
+            if (n.per_sequence_analysis && n.per_sequence_analysis.time_pressure_flag) {
+                timePressureCount++;
             }
             const pm = n.per_move_analysis || {};
             const cls = pm.move_classification;
@@ -7377,12 +7444,16 @@ function buildProfileDagTree(profile) {
         };
     }).sort((a, b) => b.count - a.count);
 
+    const timePressureRate = totalNodes > 0 ? ((timePressureCount / totalNodes) * 100).toFixed(1) : 0;
+
     return {
         totalNodes,
         gamesAnalyzed: events.length,
         eventfulCount,
         needAnalysisCount,
         blunderRate,
+        timePressureRate,
+        timePressureCount,
         aspectMetrics: {
             offensive_creation: { rating: totalNodes > 0 ? Math.round((offCreationCount / totalNodes) * 100) : 0, count: offCreationCount, nodes: aspectNodes.offensive_creation },
             offensive_execution: { rating: totalNodes > 0 ? Math.round((offExecutionCount / totalNodes) * 100) : 0, count: offExecutionCount, nodes: aspectNodes.offensive_execution },
@@ -7434,6 +7505,17 @@ async function openEnhancedAnalyticsModal() {
     const elBlunderRate = document.getElementById('analytics-blunder-rate');
     if (elBlunderRate) {
         elBlunderRate.textContent = `${dagResult.blunderRate}%`;
+    }
+
+    const elTimePressure = document.getElementById('analytics-time-pressure');
+    if (elTimePressure) {
+        if (dagResult.gamesAnalyzed === 0 || dagResult.totalNodes === 0) {
+            elTimePressure.textContent = '0% (None)';
+            elTimePressure.style.color = '#a1a1aa';
+        } else {
+            elTimePressure.textContent = `${dagResult.timePressureRate}% of moves`;
+            elTimePressure.style.color = (parseFloat(dagResult.timePressureRate) > 20) ? '#f87171' : '#60a5fa';
+        }
     }
 
     // Update 6-Aspect Radar Display
@@ -7659,9 +7741,9 @@ async function syncProfilesWithBackend() {
                 data.profiles.forEach(bp => {
                     const local = userProfiles.find(p => p.id === bp.id);
                     if (local) {
-                        if (bp.history && bp.history.length > 0) {
+                        if (bp.history && bp.history.length > 0 && (!local.history || local.history.length < bp.history.length)) {
                             local.history = bp.history;
-                            local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || local.gamesPlayed;
+                            local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || bp.history.length;
                             local.wins = bp.wins ?? local.wins;
                             local.draws = bp.draws ?? local.draws;
                             local.losses = bp.losses ?? local.losses;
@@ -7674,6 +7756,7 @@ async function syncProfilesWithBackend() {
                 renderProfileHistoryTab();
                 renderProfileSummaryCard();
                 renderProfilesListTab();
+                if (typeof renderSavedGamesList === 'function') renderSavedGamesList();
             }
         }
     } catch(e) {
