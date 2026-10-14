@@ -196,6 +196,26 @@
                                 <span id="profile-history-qa-badge" class="hidden" style="background:#4338ca; color:#e0e7ff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;">QA MODE</span>
                             </div>
                         </div>
+
+                        <!-- Analysis Action Toolbar with Progress Overlay Buttons -->
+                        <div id="profile-history-analysis-toolbar" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid #27272a;">
+                            <button class="btn-async-analysis" id="btn-analyze-sf-move" title="Stockfish Analyze Pending Per-Move Nodes (Atomic)">
+                                <div class="btn-progress-overlay" id="prog-analyze-sf-move"></div>
+                                <span class="btn-content-label" id="label-analyze-sf-move">⚡ Stockfish Move (0)</span>
+                            </button>
+                            <button class="btn-async-analysis" id="btn-analyze-sf-seq" title="Stockfish Analyze Pending Per-Sequence Nodes (Atomic)">
+                                <div class="btn-progress-overlay" id="prog-analyze-sf-seq"></div>
+                                <span class="btn-content-label" id="label-analyze-sf-seq">📈 Stockfish Seq (0)</span>
+                            </button>
+                            <button class="btn-async-analysis" id="btn-analyze-mentor-move" title="Mentor Analyze Pending Per-Move Nodes (Atomic)">
+                                <div class="btn-progress-overlay" id="prog-analyze-mentor-move"></div>
+                                <span class="btn-content-label" id="label-analyze-mentor-move">🧠 Mentor Move (0)</span>
+                            </button>
+                            <button class="btn-async-analysis" id="btn-analyze-mentor-seq" title="Mentor Analyze Pending Per-Sequence Nodes (Atomic)">
+                                <div class="btn-progress-overlay" id="prog-analyze-mentor-seq"></div>
+                                <span class="btn-content-label" id="label-analyze-mentor-seq">📚 Mentor Seq (0)</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Split Container: For Normal Profile = Full Games Tree; For QA = Split Pane 1 (Games) & Pane 2 (Raw JSON) -->

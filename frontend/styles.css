@@ -3394,3 +3394,126 @@ input:checked + .slider:before {
     min-width: 0 !important;
 }
 
+/* ==========================================================================
+   🏷️ Move Chip Missing Analysis Badges & Async Progress Buttons
+   ========================================================================== */
+.chip-badges-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.chip-badge {
+    font-size: calc(8px * var(--history-font-scale, 1));
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 2px;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+}
+
+.chip-badge-pm {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.chip-badge-ps {
+    background: rgba(234, 179, 8, 0.25);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.5);
+}
+
+.chip-badge-mm {
+    background: rgba(168, 85, 247, 0.25);
+    color: #d8b4fe;
+    border: 1px solid rgba(168, 85, 247, 0.5);
+}
+
+.chip-badge-ms {
+    background: rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.5);
+}
+
+/* Async Analysis Buttons with Progress Bar Overlay */
+.btn-async-analysis {
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 8px;
+    cursor: pointer;
+    border: 1px solid #3f3f46;
+    background: #18181b;
+    color: #e4e4e7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: all 0.15s ease;
+    user-select: none;
+    box-sizing: border-box;
+}
+
+.btn-async-analysis:hover:not(:disabled) {
+    border-color: #60a5fa;
+    color: #fff;
+    background: #27272a;
+    transform: translateY(-1px);
+}
+
+.btn-async-analysis .btn-progress-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, rgba(37, 99, 235, 0.55), rgba(59, 130, 246, 0.75));
+    transition: width 0.12s ease-out;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: 4px;
+}
+
+.btn-async-analysis .btn-content-label {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.btn-async-analysis.is-running {
+    border-color: #3b82f6 !important;
+    background: #0f172a !important;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    animation: pulseBorder 1.5s infinite;
+}
+
+.btn-async-analysis.is-complete {
+    background: #064e3b !important;
+    border-color: #10b981 !important;
+    color: #a7f3d0 !important;
+}
+
+.btn-async-analysis:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+@keyframes pulseBorder {
+    0% { border-color: #3b82f6; }
+    50% { border-color: #60a5fa; }
+    100% { border-color: #3b82f6; }
+}
+
