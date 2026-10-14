@@ -243,8 +243,16 @@ async def select_notebook(req: SelectNotebookRequest):
 
 def build_board_from_request(fen: Optional[str], moves: Optional[List[str]]) -> chess.Board:
     """
-    Safely constructs a chess.Board from moves list or FEN without double-applying moves onto a non-start FEN.
+    Safely constructs a chess.Board from FEN or moves list.
+    Prioritizes specific non-start FEN so current board state is accurately reflected.
     """
+    STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    if fen and fen != "start" and fen.strip() != STARTING_FEN:
+        try:
+            return chess.Board(fen)
+        except Exception:
+            pass
+
     if moves and len(moves) > 0:
         board = chess.Board()
         for m in moves:
@@ -1398,14 +1406,15 @@ async def get_profile_insights(profile_id: Optional[str] = None):
     for ev in history:
         for n in ev.get("moves", []):
             total_nodes += 1
-            st = n.get("analysis_status")
-            if st == "NEED_ANALYSIS":
+            sf_st = n.get("stockfish_analysis_status") or n.get("analysis_status")
+            mentor_st = n.get("mentor_analysis_status") or n.get("analysis_status")
+            if sf_st in ("NEED_ANALYSIS", "PENDING", "PENDING_ANALYSIS") or mentor_st in ("NEED_ANALYSIS", "PENDING", "PENDING_ANALYSIS"):
                 need_analysis_count += 1
-            pm = n.get("per_move_analysis", {})
+            pm = n.get("per_move_analysis") or {}
             cls = pm.get("move_classification")
             if cls in ["Blunder", "Mistake", "Inaccuracy", "Brilliant", "Great"]:
                 eventful_count += 1
-            flags = pm.get("six_aspect_flags", {})
+            flags = pm.get("six_aspect_flags") or {}
             if flags.get("offensive_creation"): off_creation += 1
             if flags.get("offensive_execution"): off_execution += 1
             if flags.get("offensive_yield", 0) > 0:

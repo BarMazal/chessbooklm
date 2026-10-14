@@ -937,6 +937,9 @@ function initTabs() {
                 if (targetId === 'tab-settings') {
                     if (typeof openGameSettingsModal === 'function') openGameSettingsModal();
                 }
+                if (targetId === 'tab-profile-history') {
+                    if (typeof renderProfileHistoryTab === 'function') renderProfileHistoryTab();
+                }
             });
         });
     });
@@ -1418,36 +1421,50 @@ function openPromotionModal(matchingMoves, activeTurnColor) {
     modal.classList.remove('hidden');
 }
 
+let isExecutingMove = false;
+let pendingGameOverOutcome = null;
+
 async function executeMove(sanMove, uciMove) {
-    if (gameSettings.enableSound) {
-        if (sanMove.includes('x')) {
-            chessAudioEngine.playCapture(gameSettings.soundPack, gameSettings.soundVolume);
-        } else if (sanMove.includes('+') || sanMove.includes('#')) {
-            chessAudioEngine.playCheck(gameSettings.soundPack, gameSettings.soundVolume);
-        } else {
-            chessAudioEngine.playMove(gameSettings.soundPack, gameSettings.soundVolume);
+    isExecutingMove = true;
+    try {
+        if (gameSettings.enableSound) {
+            if (sanMove.includes('x')) {
+                chessAudioEngine.playCapture(gameSettings.soundPack, gameSettings.soundVolume);
+            } else if (sanMove.includes('+') || sanMove.includes('#')) {
+                chessAudioEngine.playCheck(gameSettings.soundPack, gameSettings.soundVolume);
+            } else {
+                chessAudioEngine.playMove(gameSettings.soundPack, gameSettings.soundVolume);
+            }
         }
-    }
-    overrideShowHintForCurrentMove = false;
-    hasDeclaredGameOver = false;
-    selectedHistoryMoveIndex = -1;
-    const bannerEl = document.getElementById('move-replay-banner');
-    if (bannerEl) bannerEl.classList.add('hidden');
+        overrideShowHintForCurrentMove = false;
+        hasDeclaredGameOver = false;
+        selectedHistoryMoveIndex = -1;
+        const bannerEl = document.getElementById('move-replay-banner');
+        if (bannerEl) bannerEl.classList.add('hidden');
 
-    const previousTurnColor = currentFen.split(' ')[1] || 'w';
-    moveHistory.push(sanMove);
-    moveStackUci.push(uciMove);
-    lastMoveSquares = [uciMove.slice(0, 2), uciMove.slice(2, 4)];
+        const previousTurnColor = currentFen.split(' ')[1] || 'w';
+        moveHistory.push(sanMove);
+        moveStackUci.push(uciMove);
+        lastMoveSquares = [uciMove.slice(0, 2), uciMove.slice(2, 4)];
 
-    if (isAutoPaused) {
-        isAutoPaused = false;
-        updatePauseResumeButtonUI();
-    }
+        if (isAutoPaused) {
+            isAutoPaused = false;
+            updatePauseResumeButtonUI();
+        }
 
-    await updatePositionEvaluation();
-    onMoveExecutedClockTick(previousTurnColor);
-    if (typeof recordLiveMoveToActiveEvent === 'function') {
-        recordLiveMoveToActiveEvent(sanMove, uciMove, currentFen, latestEvalData ? latestEvalData.eval : null);
+        await updatePositionEvaluation();
+        onMoveExecutedClockTick(previousTurnColor);
+        if (typeof recordLiveMoveToActiveEvent === 'function') {
+            recordLiveMoveToActiveEvent(sanMove, uciMove, currentFen, latestEvalData ? latestEvalData.eval : null);
+        }
+        if (pendingGameOverOutcome) {
+            if (typeof finalizeActiveLiveGameEvent === 'function') {
+                finalizeActiveLiveGameEvent(pendingGameOverOutcome);
+            }
+            pendingGameOverOutcome = null;
+        }
+    } finally {
+        isExecutingMove = false;
     }
 }
 
@@ -1509,7 +1526,7 @@ async function updatePositionEvaluation(evalFen, evalMoves) {
                 }
             }
 
-            if (!hasDeclaredGameOver && moveHistory.length > 0) {
+            if (!hasDeclaredGameOver && moveHistory.length > 0 && !liveGameSnapshot && evalFen === undefined) {
                 hasDeclaredGameOver = true;
                 const activeTurnColor = data.turn || (currentFen.split(' ')[1] === 'w' ? 'white' : 'black');
                 const isCheck = data.is_check || data.white_in_check || data.black_in_check;
@@ -1743,6 +1760,26 @@ async function resetBoardState() {
     }
     isAutoPaused = false;
     updatePauseResumeButtonUI();
+
+    // Finalize any in-progress live event cleanly
+    if (activeLiveGameEvent && activeLiveGameEvent.moves && activeLiveGameEvent.moves.length > 0) {
+        if (activeLiveGameEvent.moves.length <= 1) {
+            // Discard accidental 1-move games on reset
+            const p = getActiveProfile();
+            if (p && p.history) {
+                p.history = p.history.filter(e => e.id !== activeLiveGameEvent.id);
+            }
+        } else if (activeLiveGameEvent.result === 'in_progress') {
+            activeLiveGameEvent.result = 'reset';
+            activeLiveGameEvent.endedAt = new Date().toISOString();
+        }
+        activeLiveGameEvent = null;
+        saveUserProfilesToStorage();
+        if (typeof renderProfileHistoryTab === 'function') renderProfileHistoryTab();
+    } else {
+        activeLiveGameEvent = null;
+    }
+
     startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     currentFen = startFen;
     moveHistory = [];
@@ -3260,12 +3297,15 @@ async function requestMentorInsight(customQuestion = null) {
             studentColor = 'black';
         }
 
+        const isViewingHistory = !!liveGameSnapshot || (typeof selectedHistoryMoveIndex !== 'undefined' && selectedHistoryMoveIndex !== -1);
+        const movesToSend = isViewingHistory ? [] : moveHistory;
+
         const resp = await fetch('/api/mentor/explain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 fen: currentFen || startFen,
-                moves: moveHistory,
+                moves: movesToSend,
                 mode: selectedMode,
                 question: customQuestion,
                 student_color: studentColor,
@@ -3500,11 +3540,77 @@ function saveCurrentGame() {
 
     savedGames.unshift(newGame);
     saveSavedGamesToStorage();
+
+    // Also persist into the active profile's history so it appears in the History tab
+    const prof = getActiveProfile();
+    if (prof) {
+        if (!prof.history) prof.history = [];
+        const eventId = `evt_saved_${Date.now()}`;
+        const eventMoves = [];
+        let parentId = null;
+        (moveHistory || []).forEach((san, mIdx) => {
+            const mNum = Math.floor(mIdx / 2) + 1;
+            const mColor = (mIdx % 2 === 0) ? 'w' : 'b';
+            const nodeId = `node_${eventId}_${mIdx+1}`;
+            const uci = (moveStackUci && moveStackUci[mIdx]) ? moveStackUci[mIdx] : san;
+            eventMoves.push({
+                id: nodeId,
+                event_id: eventId,
+                profile_id: prof.id,
+                move_number: mNum,
+                color: mColor,
+                move_san: san,
+                move_uci: uci,
+                fen: (mIdx === moveHistory.length - 1) ? currentFen : '',
+                parent_id: parentId,
+                branch_id: 'mainline',
+                leaf_termination: null,
+                per_move_analysis: {
+                    stockfish_eval: '+0.0',
+                    eval_delta: 0.05,
+                    best_move_uci: uci,
+                    best_move_san: san,
+                    move_classification: 'Good',
+                    six_aspect_flags: {
+                        offensive_creation: false,
+                        offensive_execution: false,
+                        offensive_yield: 0,
+                        defensive_prevention: false,
+                        defensive_failure: false,
+                        defensive_damage: 0
+                    },
+                    tactical_category: 'saved_game',
+                    tactical_sub_category: 'custom'
+                },
+                stockfish_analysis_status: 'ANALYZED',
+                mentor_analysis_status: 'ANALYZED'
+            });
+            parentId = nodeId;
+        });
+
+        prof.history.unshift({
+            id: eventId,
+            type: 'game',
+            title: title,
+            result: 'completed',
+            startedAt: new Date().toISOString(),
+            endedAt: new Date().toISOString(),
+            startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            goal: notes || null,
+            opponent: (gameSettings && gameSettings.blackPlayerMode === 'manual') ? 'Human' : 'Stockfish',
+            totalNodes: eventMoves.length,
+            moves: eventMoves
+        });
+        prof.gamesPlayed = (prof.gamesPlayed || 0) + 1;
+        saveUserProfilesToStorage();
+        if (typeof renderProfileHistoryTab === 'function') renderProfileHistoryTab();
+    }
+
     renderSavedGamesList();
 
     if (titleInput) titleInput.value = '';
     if (notesInput) notesInput.value = '';
-    alert('Game saved to library successfully!');
+    alert('Game saved to library and profile history successfully!');
 }
 
 function renderSavedGamesList() {
@@ -3580,6 +3686,7 @@ function renderSavedGamesList() {
 
 async function loadProfileEventToBoard(ev) {
     if (!ev || !ev.moves || ev.moves.length === 0) return;
+    if (typeof snapshotLiveGameIfNeeded === 'function') snapshotLiveGameIfNeeded();
     moveHistory = [];
     moveStackUci = [];
     startFen = ev.startingFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -3601,6 +3708,7 @@ async function loadProfileEventToBoard(ev) {
 async function loadSavedGame(gameId) {
     const game = savedGames.find(g => g.id === gameId);
     if (!game) return;
+    if (typeof snapshotLiveGameIfNeeded === 'function') snapshotLiveGameIfNeeded();
 
     if (game.moves && game.moves.length > 0) {
         moveHistory = [];
@@ -3850,6 +3958,7 @@ const DEFAULT_PROFILES = [
         wins: 31,
         draws: 7,
         losses: 14,
+        history: [],
         concepts: {
             offensive: { name: 'Offensive Strategy', rating: 1710, icon: '⚔️' },
             defensive: { name: 'Defensive Maneuvers', rating: 1620, icon: '🛡️' },
@@ -3868,6 +3977,7 @@ const DEFAULT_PROFILES = [
         wins: 25,
         draws: 5,
         losses: 10,
+        history: [],
         concepts: {
             offensive: { name: 'Offensive Strategy', rating: 1780, icon: '⚔️' },
             defensive: { name: 'Defensive Maneuvers', rating: 1610, icon: '🛡️' },
@@ -3886,6 +3996,7 @@ const DEFAULT_PROFILES = [
         wins: 20,
         draws: 8,
         losses: 7,
+        history: [],
         concepts: {
             offensive: { name: 'Offensive Strategy', rating: 1620, icon: '⚔️' },
             defensive: { name: 'Defensive Maneuvers', rating: 1710, icon: '🛡️' },
@@ -3904,6 +4015,7 @@ const DEFAULT_PROFILES = [
         wins: 32,
         draws: 6,
         losses: 10,
+        history: [],
         concepts: {
             offensive: { name: 'Offensive Strategy', rating: 1720, icon: '⚔️' },
             defensive: { name: 'Defensive Maneuvers', rating: 1760, icon: '🛡️' },
@@ -3916,10 +4028,11 @@ const DEFAULT_PROFILES = [
 ];
 
 let userProfiles = [];
-let activeProfileId = 'prof_qa_tester';
+let activeProfileId = 'prof_default';
 
 function initUserProfileModule() {
     loadUserProfilesFromStorage();
+    updateHeaderProfileUI();
     const card = document.getElementById('header-profile-badge');
     if (card) {
         card.style.cursor = 'pointer';
@@ -3949,6 +4062,27 @@ function loadUserProfilesFromStorage() {
                     }
                 }
             });
+
+            // Migrate analysis_status to stockfish_analysis_status & mentor_analysis_status
+            userProfiles.forEach(p => {
+                const isQa = p.id === 'prof_qa_tester' || p.is_qa;
+                (p.history || []).forEach(ev => {
+                    (ev.moves || []).forEach(n => {
+                        if (n.analysis_status || !n.stockfish_analysis_status) {
+                            const prevSt = n.analysis_status || 'ANALYZED';
+                            n.stockfish_analysis_status = prevSt;
+                            n.mentor_analysis_status = prevSt;
+                            delete n.analysis_status;
+                        }
+                        if (isQa) {
+                            n.per_move_analysis = null;
+                            n.per_sequence_analysis = null;
+                            n.stockfish_analysis_status = 'PENDING';
+                            n.mentor_analysis_status = 'PENDING';
+                        }
+                    });
+                });
+            });
         } catch (e) {
             userProfiles = [...DEFAULT_PROFILES];
         }
@@ -3960,16 +4094,30 @@ function loadUserProfilesFromStorage() {
 
     if (savedActiveId && userProfiles.some(p => p.id === savedActiveId)) {
         activeProfileId = savedActiveId;
-    } else if (userProfiles.some(p => p.id === 'prof_qa_tester')) {
-        activeProfileId = 'prof_qa_tester';
+    } else if (userProfiles.some(p => p.id === 'prof_default')) {
+        activeProfileId = 'prof_default';
     } else if (userProfiles.length > 0) {
         activeProfileId = userProfiles[0].id;
     }
 }
 
 function saveUserProfilesToStorage() {
-    localStorage.setItem('chess_user_profiles', JSON.stringify(userProfiles));
-    localStorage.setItem('chess_active_profile_id', activeProfileId);
+    try {
+        localStorage.setItem('chess_user_profiles', JSON.stringify(userProfiles));
+        localStorage.setItem('chess_active_profile_id', activeProfileId);
+    } catch (e) {
+        console.warn('localStorage quota warning when saving userProfiles:', e);
+        try {
+            const trimmed = userProfiles.map(p => ({
+                ...p,
+                history: (p.history || []).slice(0, 15)
+            }));
+            localStorage.setItem('chess_user_profiles', JSON.stringify(trimmed));
+            localStorage.setItem('chess_active_profile_id', activeProfileId);
+        } catch (e2) {
+            console.error('Failed to save profiles to localStorage:', e2);
+        }
+    }
 }
 
 function getActiveProfile() {
@@ -4205,6 +4353,12 @@ function handleCreateProfile() {
 
 function switchActiveProfile(profId) {
     if (!userProfiles.some(p => p.id === profId)) return;
+
+    // If currently playing a live game and no snapshot taken, freeze game with the current profile before switching away!
+    if (typeof snapshotLiveGameIfNeeded === 'function' && !liveGameSnapshot && (moveHistory.length > 0 && !hasDeclaredGameOver)) {
+        snapshotLiveGameIfNeeded();
+    }
+
     activeProfileId = profId;
     saveUserProfilesToStorage();
     updateHeaderProfileUI();
@@ -4216,6 +4370,13 @@ function switchActiveProfile(profId) {
     renderConversionsTab();
     renderProfilesListTab();
     if (typeof renderProfileHistoryTab === 'function') renderProfileHistoryTab();
+
+    // Sync with backend switch endpoint
+    fetch('/api/user/profiles/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profId })
+    }).catch(e => console.warn('Profile switch backend notify skipped:', e));
 }
 
 function deleteUserProfile(profId) {
@@ -5162,7 +5323,11 @@ function recordGameResult(outcome, opponentElo = 1500) {
     updateClockPlayerTypesUI();
     renderProfileSummaryCard();
     renderProfilesListTab();
-    if (typeof finalizeActiveLiveGameEvent === 'function') finalizeActiveLiveGameEvent(outcome);
+    if (isExecutingMove) {
+        pendingGameOverOutcome = outcome;
+    } else if (typeof finalizeActiveLiveGameEvent === 'function') {
+        finalizeActiveLiveGameEvent(outcome);
+    }
 
     const sign = eloChange >= 0 ? `+${eloChange}` : `${eloChange}`;
     const total = prof.gamesPlayed;
@@ -6906,7 +7071,7 @@ function renderSettingsPreviewBoard() {
 }
 
 
-function seedQaProfileData() {
+async function seedQaProfileData() {
     let qaProf = userProfiles.find(p => p.id === 'prof_qa_tester');
     if (!qaProf) {
         qaProf = {
@@ -6918,6 +7083,7 @@ function seedQaProfileData() {
             wins: 31,
             draws: 7,
             losses: 14,
+            history: [],
             concepts: {
                 offensive: { name: 'Offensive Strategy', rating: 1710, icon: '⚔️' },
                 defensive: { name: 'Defensive Maneuvers', rating: 1620, icon: '🛡️' },
@@ -6938,12 +7104,14 @@ function seedQaProfileData() {
 
     activeProfileId = 'prof_qa_tester';
     saveUserProfilesToStorage();
+    await syncProfilesWithBackend(true);
     updateHeaderProfileUI();
     updateClockPlayerTypesUI();
     renderProfileSummaryCard();
     renderSkillBreakdownTab();
     renderConversionsTab();
     renderProfilesListTab();
+    renderProfileHistoryTab();
 
     alert('🧪 QA Profile ("QA Tester Profile") & Fake Games History seeded and activated successfully!');
 }
@@ -6956,49 +7124,152 @@ let liveGameSnapshot = null;
 let activeLiveGameEvent = null;
 
 // ==========================================
-// 🔴 LIVE ACTIVE GAME STATE PRESERVATION
+// 🔴 LIVE ACTIVE GAME STATE PRESERVATION & FONT SCALING
 // ==========================================
+let historyFontScale = 100;
+const HISTORY_FONT_SCALES = [75, 85, 95, 100, 110, 125, 140, 160];
+
+let syncProfilesTimer = null;
+function queueBackendProfilesSync() {
+    clearTimeout(syncProfilesTimer);
+    syncProfilesTimer = setTimeout(() => {
+        fetch('/api/user/profiles/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                profiles: userProfiles,
+                active_profile_id: activeProfileId
+            })
+        }).catch(err => console.warn('Background profile sync skipped:', err));
+    }, 1500);
+}
+
+function initProfileHistoryFontSize() {
+    const saved = localStorage.getItem('chess_history_font_scale');
+    if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 50 && parsed <= 250) {
+            historyFontScale = parsed;
+        }
+    }
+    applyHistoryFontScale(historyFontScale);
+
+    const btnInc = document.getElementById('btn-history-font-inc');
+    const btnDec = document.getElementById('btn-history-font-dec');
+
+    if (btnInc) {
+        btnInc.onclick = (e) => {
+            e.stopPropagation();
+            changeHistoryFontScale(1);
+        };
+    }
+    if (btnDec) {
+        btnDec.onclick = (e) => {
+            e.stopPropagation();
+            changeHistoryFontScale(-1);
+        };
+    }
+}
+
+function changeHistoryFontScale(delta) {
+    let curIdx = HISTORY_FONT_SCALES.findIndex(s => s >= historyFontScale);
+    if (curIdx === -1) curIdx = HISTORY_FONT_SCALES.length - 1;
+    let nextIdx = curIdx + delta;
+    if (nextIdx < 0) nextIdx = 0;
+    if (nextIdx >= HISTORY_FONT_SCALES.length) nextIdx = HISTORY_FONT_SCALES.length - 1;
+
+    historyFontScale = HISTORY_FONT_SCALES[nextIdx];
+    localStorage.setItem('chess_history_font_scale', historyFontScale);
+    applyHistoryFontScale(historyFontScale);
+}
+
+function applyHistoryFontScale(scale) {
+    const label = document.getElementById('history-font-size-label');
+    if (label) label.textContent = `${scale}%`;
+
+    const ratio = scale / 100;
+    const tabEl = document.getElementById('tab-profile-history');
+    if (tabEl) {
+        tabEl.style.setProperty('--history-font-scale', ratio);
+    }
+    const gamesPane = document.getElementById('profile-history-games-pane');
+    if (gamesPane) {
+        gamesPane.style.setProperty('--history-font-scale', ratio);
+    }
+    const jsonViewer = document.getElementById('qa-pane-json-viewer');
+    if (jsonViewer) {
+        jsonViewer.style.fontSize = `${Math.round(10 * ratio)}px`;
+    }
+}
+
 function snapshotLiveGameIfNeeded() {
     if (!liveGameSnapshot && (moveHistory.length > 0 || !hasDeclaredGameOver)) {
         liveGameSnapshot = {
+            profileId: activeProfileId,
+            activeLiveGameEvent: activeLiveGameEvent,
             startFen,
             currentFen,
             moveHistory: [...moveHistory],
             moveStackUci: [...moveStackUci],
             lastMoveSquares: [...lastMoveSquares],
-            whiteTimeLeft,
-            blackTimeLeft,
-            isWhiteTurn,
-            isAutoPaused
+            whiteTimeMs: (typeof whiteTimeMs !== 'undefined') ? whiteTimeMs : 300000,
+            blackTimeMs: (typeof blackTimeMs !== 'undefined') ? blackTimeMs : 300000,
+            isAutoPaused: (typeof isAutoPaused !== 'undefined') ? isAutoPaused : false
         };
+        const bannerEl = document.getElementById('move-replay-banner');
+        const bannerText = document.getElementById('replay-banner-text');
+        if (bannerEl) {
+            bannerEl.classList.remove('hidden');
+            if (bannerText && !bannerText.textContent.includes('Viewing History')) {
+                const savedProf = userProfiles.find(p => p.id === activeProfileId);
+                bannerText.textContent = `⏸️ Game Frozen (${savedProf ? savedProf.name : 'Live Game'}) - Return to resume`;
+            }
+        }
     }
 }
 
 async function returnToLiveGame() {
     if (liveGameSnapshot) {
+        const savedProfId = liveGameSnapshot.profileId;
+        const savedEvent = liveGameSnapshot.activeLiveGameEvent;
+
+        // Restore active profile to the one that played the frozen game!
+        if (savedProfId && savedProfId !== activeProfileId) {
+            switchActiveProfile(savedProfId);
+        }
+        if (savedEvent) {
+            activeLiveGameEvent = savedEvent;
+        }
+
         startFen = liveGameSnapshot.startFen;
         currentFen = liveGameSnapshot.currentFen;
         moveHistory = [...liveGameSnapshot.moveHistory];
         moveStackUci = [...liveGameSnapshot.moveStackUci];
         lastMoveSquares = [...liveGameSnapshot.lastMoveSquares];
-        whiteTimeLeft = liveGameSnapshot.whiteTimeLeft;
-        blackTimeLeft = liveGameSnapshot.blackTimeLeft;
-        isWhiteTurn = liveGameSnapshot.isWhiteTurn;
-        isAutoPaused = liveGameSnapshot.isAutoPaused;
+        if (typeof whiteTimeMs !== 'undefined') whiteTimeMs = liveGameSnapshot.whiteTimeMs;
+        if (typeof blackTimeMs !== 'undefined') blackTimeMs = liveGameSnapshot.blackTimeMs;
+        if (typeof isAutoPaused !== 'undefined') isAutoPaused = liveGameSnapshot.isAutoPaused;
         liveGameSnapshot = null;
 
         parseFenToState(currentFen);
         renderBoard();
         renderMoveHistoryTable();
-        updateChessClocksUI();
-        updatePauseResumeButtonUI();
+        if (typeof updateClockDisplaysUI === 'function') updateClockDisplaysUI();
+        if (typeof updateClockActiveTurnHighlight === 'function') updateClockActiveTurnHighlight();
+        if (typeof updatePauseResumeButtonUI === 'function') updatePauseResumeButtonUI();
         await updatePositionEvaluation();
+
+        const bannerEl = document.getElementById('move-replay-banner');
+        if (bannerEl) bannerEl.classList.add('hidden');
+
+        const curProf = getActiveProfile();
+        showGameToast(`🎮 Resumed live game (Profile: <strong>${curProf.name}</strong>)`);
     } else {
         selectedHistoryMoveIndex = -1;
         await updatePositionEvaluation();
+        const bannerEl = document.getElementById('move-replay-banner');
+        if (bannerEl) bannerEl.classList.add('hidden');
     }
-    const bannerEl = document.getElementById('move-replay-banner');
-    if (bannerEl) bannerEl.classList.add('hidden');
 }
 
 // Bind Return to Live Game button
@@ -7010,27 +7281,40 @@ if (btnReturnLiveInit) {
 // ==========================================
 // 🔴 LIVE ON-THE-FLY GAME RECORDING
 // ==========================================
+let currentTurnStartTimestamp = Date.now();
+
 function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
     if (!moveHistory || moveHistory.length === 0) return;
     const prof = getActiveProfile();
     if (!prof) return;
     if (!prof.history) prof.history = [];
 
-    if (!activeLiveGameEvent) {
-        activeLiveGameEvent = {
-            id: `evt_live_${Date.now()}`,
-            type: 'game',
-            title: `Live Match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
-            result: 'in_progress',
-            startedAt: new Date().toISOString(),
-            endedAt: null,
-            startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            goal: null,
-            opponent: gameSettings.blackPlayerMode === 'manual' ? 'Human' : 'Stockfish',
-            totalNodes: 0,
-            moves: []
-        };
-        prof.history.unshift(activeLiveGameEvent);
+    // Measure move duration and reset turn start timestamp
+    const now = Date.now();
+    const moveDurationMs = Math.max(100, now - currentTurnStartTimestamp);
+    currentTurnStartTimestamp = now;
+
+    // Ensure activeLiveGameEvent is valid and exists in current profile's history
+    if (!activeLiveGameEvent || !prof.history.some(e => e.id === activeLiveGameEvent.id)) {
+        const existing = prof.history.find(e => e.id && e.id.startsWith('evt_live_') && e.result === 'in_progress');
+        if (existing) {
+            activeLiveGameEvent = existing;
+        } else {
+            activeLiveGameEvent = {
+                id: `evt_live_${Date.now()}`,
+                type: 'game',
+                title: `Live Match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+                result: 'in_progress',
+                startedAt: new Date().toISOString(),
+                endedAt: null,
+                startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                goal: null,
+                opponent: gameSettings.blackPlayerMode === 'manual' ? 'Human' : 'Stockfish',
+                totalNodes: 0,
+                moves: []
+            };
+            prof.history.unshift(activeLiveGameEvent);
+        }
     }
 
     const moveIdx = moveHistory.length - 1;
@@ -7038,6 +7322,178 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
     const color = (moveIdx % 2 === 0) ? 'w' : 'b';
 
     const parentNodeId = (activeLiveGameEvent.moves.length > 0) ? activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1].id : null;
+
+    // Clock and Time Control Telemetry
+    const clockRemaining = (color === 'w') ? whiteTimeMs : blackTimeMs;
+    const clockRemainingMs = (clockRemaining === Infinity || clockRemaining === undefined) ? null : clockRemaining;
+    const tcConfig = (typeof getPlayerTimeControlConfig === 'function') ? getPlayerTimeControlConfig(color) : { untimed: true, name: 'Untimed', minutes: 0, increment: 0 };
+    const gameFullTimeMs = tcConfig.untimed ? null : (tcConfig.minutes * 60 * 1000);
+    const timeControlName = tcConfig.name || (tcConfig.untimed ? 'Untimed' : `${tcConfig.minutes}+${tcConfig.increment}`);
+    const incrementMs = (tcConfig.increment || 0) * 1000;
+
+    let timeSpentRatio = null;
+    let isTimePressure = false;
+    let timeStressPts = 0;
+
+    if (gameFullTimeMs && clockRemainingMs !== null) {
+        const availableAtStart = clockRemainingMs + moveDurationMs;
+        timeSpentRatio = (availableAtStart > 0) ? Math.min(1.0, Math.round((moveDurationMs / availableAtStart) * 1000) / 1000) : 0;
+        isTimePressure = (clockRemainingMs < 30000 || clockRemainingMs < (gameFullTimeMs * 0.15));
+        if (clockRemainingMs < 10000) timeStressPts = 45;
+        else if (clockRemainingMs < 30000) timeStressPts = 35;
+        else if (clockRemainingMs < 60000) timeStressPts = 20;
+        else timeStressPts = 5;
+    }
+
+    // Deliberation and position stress
+    const currVal = (typeof evalObj?.eval_val === 'number') ? evalObj.eval_val : null;
+    let prevVal = 0.0;
+    if (activeLiveGameEvent.moves.length > 0) {
+        const prevNode = activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1];
+        if (typeof prevNode.per_move_analysis?.eval_val === 'number') {
+            prevVal = prevNode.per_move_analysis.eval_val;
+        }
+    }
+
+    let evalDelta = null;
+    let winProbBefore = 50.0;
+    let winProbAfter = 50.0;
+    let winProbDelta = 0.0;
+    let classification = null;
+    let strategicSwingType = 'neutral';
+    let strategicSwingLabel = '⚖️ Balanced Move';
+    let isCriticalMoment = false;
+
+    if (currVal !== null) {
+        // Evaluate from the perspective of the side making the move
+        const evalBefore = (color === 'w') ? prevVal : -prevVal;
+        const evalAfter = (color === 'w') ? currVal : -currVal;
+        evalDelta = Math.round((evalAfter - evalBefore) * 100) / 100;
+        const cpLoss = -evalDelta * 100;
+
+        // Logistic Winning Probability Model (standard chess 400 centipawns scale)
+        winProbBefore = Math.round((1 / (1 + Math.pow(10, -evalBefore / 4.0))) * 1000) / 10;
+        winProbAfter = Math.round((1 / (1 + Math.pow(10, -evalAfter / 4.0))) * 1000) / 10;
+        winProbDelta = Math.round((winProbAfter - winProbBefore) * 10) / 10;
+
+        // Contextual Evaluation Dynamics
+        // 1. Killing Blow: Expanding an already decisive winning lead (+5.0 -> +9.0)
+        if (evalBefore >= 3.0 && evalAfter >= 4.5 && evalDelta >= 1.5) {
+            strategicSwingType = 'killing_blow';
+            strategicSwingLabel = '🔥 Killing Blow (Decisive Conversion)';
+            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
+            isCriticalMoment = true;
+        }
+        // 2. Strategic Turnaround: Reversing a deficit into a winning lead (-2.0 -> +2.0)
+        else if (evalBefore <= -0.8 && evalAfter >= 0.8) {
+            strategicSwingType = 'game_turnaround';
+            strategicSwingLabel = '🔄 Strategic Turnaround (Deficit to Winning)';
+            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
+            isCriticalMoment = true;
+        }
+        // 3. Tenacious Save / Stall: Fighting back or saving material in a lost position (-9.0 -> -5.0)
+        else if (evalBefore <= -4.0 && evalDelta >= 2.0 && evalAfter <= -1.5) {
+            strategicSwingType = 'tenacious_save';
+            strategicSwingLabel = '🛡️ Tenacious Save / Stall (Fighting Defense)';
+            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
+            isCriticalMoment = true;
+        }
+        // 4. Equalizing Strike: Neutralizing an opponent's edge (-1.8 -> 0.0)
+        else if (evalBefore <= -1.0 && Math.abs(evalAfter) <= 0.4 && evalDelta >= 0.8) {
+            strategicSwingType = 'equalization';
+            strategicSwingLabel = '⚖️ Equalizing Strike (Neutralized Deficit)';
+            classification = 'Best';
+        }
+        // 5. Catastrophic Throw: Throwing away a decisive lead (+3.0 -> -2.0)
+        else if (evalBefore >= 1.5 && evalAfter <= -1.0) {
+            strategicSwingType = 'critical_throw';
+            strategicSwingLabel = '💥 Catastrophic Throw (Lead Collapsed to Loss)';
+            classification = 'Blunder';
+            isCriticalMoment = true;
+        }
+        // 6. Missed Opportunity: Failing to convert a winning position or capitalizing on an error (+3.5 -> +0.2)
+        else if (evalBefore >= 2.0 && evalAfter < 1.0 && evalDelta <= -1.5) {
+            strategicSwingType = 'missed_opportunity';
+            strategicSwingLabel = '⚠️ Missed Opportunity (Winning Advantage Lost)';
+            classification = 'Missed Opportunity';
+            isCriticalMoment = true;
+        }
+        // 7. Blunder in Deficit: Blundering in an already lost position (-4.0 -> -7.0)
+        else if (evalBefore <= -2.5 && evalDelta <= -2.0) {
+            strategicSwingType = 'blunder_in_deficit';
+            strategicSwingLabel = '🩸 Deepening Deficit (Blunder in Lost Position)';
+            classification = 'Blunder';
+        }
+        // 8. Standard classifications
+        else if (moveNum <= 2) {
+            classification = 'Book';
+            strategicSwingType = 'book_move';
+            strategicSwingLabel = '📖 Opening Book';
+        } else if (cpLoss <= -150) {
+            classification = 'Brilliant';
+            strategicSwingType = 'brilliant_find';
+            strategicSwingLabel = '✨ Brilliant Tactical Strike';
+            isCriticalMoment = true;
+        } else if (cpLoss <= 25) {
+            classification = 'Best';
+            strategicSwingType = 'optimal_play';
+            strategicSwingLabel = '⭐ Top Engine Move';
+        } else if (cpLoss <= 60) {
+            classification = 'Good';
+            strategicSwingType = 'solid_move';
+            strategicSwingLabel = '👍 Solid Move';
+        } else if (cpLoss <= 150) {
+            classification = 'Inaccuracy';
+            strategicSwingType = 'inaccuracy';
+            strategicSwingLabel = '🟡 Inaccuracy';
+        } else if (cpLoss <= 300) {
+            classification = 'Mistake';
+            strategicSwingType = 'mistake';
+            strategicSwingLabel = '🟠 Tactical Mistake';
+        } else {
+            classification = 'Blunder';
+            strategicSwingType = 'blunder';
+            strategicSwingLabel = '💥 Blunder';
+            isCriticalMoment = true;
+        }
+    }
+
+    // Stress Index calculation
+    let burnStressPts = (timeSpentRatio && timeSpentRatio > 0.30) ? 25 : (timeSpentRatio && timeSpentRatio > 0.15 ? 15 : 5);
+    let tensionStressPts = Math.min(30, Math.round(Math.abs(evalDelta || 0) * 10));
+    const stressIndex = Math.min(100, Math.max(5, timeStressPts + burnStressPts + tensionStressPts));
+    const stressLevel = (stressIndex > 75) ? 'Extreme' : (stressIndex > 50 ? 'High' : (stressIndex > 25 ? 'Moderate' : 'Low'));
+
+    // Running error counts for this player
+    let runningBlunders = 0;
+    let runningMissed = 0;
+    let runningMistakes = 0;
+    let runningInaccuracies = 0;
+    let myMovesCount = 1;
+
+    (activeLiveGameEvent.moves || []).forEach(m => {
+        if (m.color === color) {
+            myMovesCount++;
+            const c = m.per_move_analysis?.move_classification;
+            if (c === 'Blunder') runningBlunders++;
+            else if (c === 'Missed Opportunity') runningMissed++;
+            else if (c === 'Mistake') runningMistakes++;
+            else if (c === 'Inaccuracy') runningInaccuracies++;
+        }
+    });
+
+    if (classification === 'Blunder') runningBlunders++;
+    else if (classification === 'Missed Opportunity') runningMissed++;
+    else if (classification === 'Mistake') runningMistakes++;
+    else if (classification === 'Inaccuracy') runningInaccuracies++;
+
+    const blunderFrequency = Math.round((runningBlunders / myMovesCount) * 100) / 100;
+    const missedFrequency = Math.round((runningMissed / myMovesCount) * 100) / 100;
+    const runningAccuracyPct = Math.max(0, Math.min(100, Math.round(100 - (runningBlunders * 16 + runningMissed * 10 + runningMistakes * 6 + runningInaccuracies * 2.5) / myMovesCount)));
+
+    // Tactical flags
+    const isCheck = san.includes('+') || san.includes('#');
+    const isCapture = san.includes('x');
 
     const node = {
         id: `node_live_${Date.now()}_${moveIdx}`,
@@ -7051,31 +7507,60 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
         parent_id: parentNodeId,
         branch_id: 'mainline',
         leaf_termination: null,
+
+        time_control_metrics: {
+            game_full_time_ms: gameFullTimeMs,
+            time_control_name: timeControlName,
+            increment_ms: incrementMs,
+            clock_remaining_ms: clockRemainingMs,
+            move_duration_ms: moveDurationMs,
+            time_spent_ratio: timeSpentRatio,
+            time_pressure_flag: isTimePressure,
+            stress_index: stressIndex,
+            stress_level: stressLevel
+        },
+
         per_move_analysis: {
-            stockfish_eval: evalObj?.score ?? '+0.0',
-            eval_delta: 0.05,
-            best_move_uci: evalObj?.best_move_uci || uci,
-            best_move_san: evalObj?.best_move_san || san,
-            move_classification: 'Good',
-            six_aspect_flags: {
-                offensive_creation: false,
-                offensive_execution: false,
-                offensive_yield: 0,
-                defensive_prevention: false,
-                defensive_failure: false,
-                defensive_damage: 0
-            },
-            tactical_category: 'live_play',
-            tactical_sub_category: 'standard_move'
+            stockfish_eval: evalObj?.score ?? null,
+            eval_val: currVal,
+            prev_eval_val: prevVal,
+            depth: evalObj?.depth ?? null,
+            best_move_uci: evalObj?.best_move || null,
+            best_move_san: evalObj?.best_move_san || null,
+            eval_source: evalObj?.source || (evalObj ? 'stockfish' : null),
+            eval_delta: evalDelta,
+            win_probability_before: winProbBefore,
+            win_probability_after: winProbAfter,
+            win_probability_delta: winProbDelta,
+            move_classification: classification,
+            strategic_swing_type: strategicSwingType,
+            strategic_swing_label: strategicSwingLabel,
+            is_critical_moment: isCriticalMoment,
+            is_check: isCheck,
+            is_capture: isCapture,
+            six_aspect_flags: null,
+            tactical_category: null,
+            tactical_sub_category: null
         },
+
+        running_error_metrics: {
+            running_blunder_count: runningBlunders,
+            running_missed_opportunities_count: runningMissed,
+            running_mistake_count: runningMistakes,
+            running_inaccuracy_count: runningInaccuracies,
+            blunder_frequency: blunderFrequency,
+            missed_opportunity_frequency: missedFrequency,
+            running_accuracy_pct: runningAccuracyPct
+        },
+
         per_sequence_analysis: {
-            cumulative_blunders: 0,
-            cumulative_misses: 0,
-            time_pressure_flag: false,
-            sequence_blunder_rate: 0.0,
-            transposition_key: fenAfter.split(' ')[0].slice(0, 24)
+            time_pressure_flag: isTimePressure,
+            sequence_trend: (winProbDelta > 5) ? 'rising' : (winProbDelta < -5 ? 'declining' : 'steady'),
+            eval_swing_last_move: evalDelta
         },
-        analysis_status: 'ANALYZED'
+
+        stockfish_analysis_status: evalObj ? 'ANALYZED' : 'PENDING',
+        mentor_analysis_status: 'PENDING'
     };
 
     activeLiveGameEvent.moves.push(node);
@@ -7083,6 +7568,7 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
 
     saveUserProfilesToStorage();
     renderProfileHistoryTab();
+    queueBackendProfilesSync();
 }
 
 function handleLiveMoveUndo() {
@@ -7100,6 +7586,7 @@ function handleLiveMoveUndo() {
         }
         saveUserProfilesToStorage();
         renderProfileHistoryTab();
+        queueBackendProfilesSync();
     }
 }
 
@@ -7110,6 +7597,7 @@ function finalizeActiveLiveGameEvent(outcome) {
         activeLiveGameEvent = null;
         saveUserProfilesToStorage();
         renderProfileHistoryTab();
+        queueBackendProfilesSync();
     }
 }
 
@@ -7117,8 +7605,8 @@ function finalizeActiveLiveGameEvent(outcome) {
 // ==========================================
 // 👤 PROFILE HISTORY TAB & QA JSON INSPECTOR
 // ==========================================
-function renderProfileHistoryTab() {
-    const prof = getActiveProfile();
+async function renderProfileHistoryTab() {
+    let prof = getActiveProfile();
     if (!prof) return;
 
     const titleEl = document.getElementById('profile-history-header-title');
@@ -7133,9 +7621,9 @@ function renderProfileHistoryTab() {
 
     const history = prof.history || [];
     const totalNodes = history.reduce((acc, ev) => acc + (ev.moves ? ev.moves.length : 0), 0);
-    if (subtitleEl) subtitleEl.textContent = `${history.length} Events Tracked • ${totalNodes} DAG Nodes`;
+    if (subtitleEl) subtitleEl.textContent = `${history.length} Games Tracked • ${totalNodes} DAG Nodes`;
 
-    // Toggle QA elements
+    // The json data and QA badge are shown ONLY to the QA profile!
     if (prof.is_qa) {
         if (qaBadge) qaBadge.classList.remove('hidden');
         if (qaPane) qaPane.classList.remove('hidden');
@@ -7160,6 +7648,7 @@ function renderProfileHistoryTab() {
     history.forEach((ev, evIdx) => {
         const evCard = document.createElement('div');
         evCard.className = 'history-event-card';
+        evCard.style.flexShrink = '0';
 
         const isWin = ev.result === '1-0' || ev.result === 'completed';
         const isLoss = ev.result === '0-1';
@@ -7170,23 +7659,30 @@ function renderProfileHistoryTab() {
         const mainlineMoves = moves.filter(m => m.branch_id === 'mainline');
         const undoMoves = moves.filter(m => m.branch_id && m.branch_id !== 'mainline');
 
+        // Auto-expand the first game so move chips are immediately visible
+        const isFirstOpen = (evIdx === 0);
+
         evCard.innerHTML = `
             <div class="history-event-header clickable">
-                <div style="display:flex; align-items:center; gap:6px; overflow:hidden;">
-                    <span>${icon}</span>
+                <div style="display:flex; align-items:center; gap:6px; overflow:hidden; min-width:0;">
+                    <span class="history-game-num">#${evIdx + 1}</span>
+                    <span style="flex-shrink:0;">${icon}</span>
                     <strong style="font-size:12px; color:#fff; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;" title="${ev.title}">${ev.title}</strong>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                     <span style="font-size:10px; font-weight:700; color:${resultColor}; border:1px solid ${resultColor}; padding:1px 5px; border-radius:4px;">${ev.result}</span>
                     <span style="font-size:10px; color:#71717a;">${moves.length}n</span>
-                    <span class="event-collapse-arrow" style="font-size:10px; color:#a1a1aa;">▼</span>
+                    <span class="event-collapse-arrow" style="font-size:10px; color:#a1a1aa;">${isFirstOpen ? '▲' : '▼'}</span>
                 </div>
             </div>
-            <div class="history-event-body hidden">
+            <div class="history-event-body ${isFirstOpen ? '' : 'hidden'}">
                 ${ev.goal ? `<div style="color:#a5b4fc; margin-bottom:6px; font-size:11px;">🎯 Goal: ${ev.goal}</div>` : ''}
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <span style="font-size:10px; color:#71717a;">Opponent: ${ev.opponent || 'Stockfish'}</span>
-                    <button class="btn btn-xs btn-secondary btn-rename-history-event" style="font-size:9px; padding:1px 6px;">✏️ Rename</button>
+                    <div style="display:flex; gap:4px;">
+                        <button class="btn btn-xs btn-primary btn-load-history-event" style="font-size:9px; padding:1px 6px;">▶️ Load Game</button>
+                        <button class="btn btn-xs btn-secondary btn-rename-history-event" style="font-size:9px; padding:1px 6px;">✏️ Rename</button>
+                    </div>
                 </div>
                 <div class="history-move-chips-container" style="display:flex; flex-direction:column; gap:6px;"></div>
             </div>
@@ -7197,6 +7693,7 @@ function renderProfileHistoryTab() {
         const arrowEl = evCard.querySelector('.event-collapse-arrow');
         const chipsContainer = evCard.querySelector('.history-move-chips-container');
         const renameBtn = evCard.querySelector('.btn-rename-history-event');
+        const loadGameBtn = evCard.querySelector('.btn-load-history-event');
 
         headerEl.onclick = () => {
             const isHidden = bodyEl.classList.toggle('hidden');
@@ -7207,6 +7704,16 @@ function renderProfileHistoryTab() {
             renameBtn.onclick = (e) => {
                 e.stopPropagation();
                 promptRenameGameEvent(ev.id, ev.title);
+            };
+        }
+
+        if (loadGameBtn) {
+            loadGameBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (typeof loadProfileEventToBoard === 'function') {
+                    await loadProfileEventToBoard(ev);
+                    showGameToast(`♟️ Loaded <strong>${ev.title}</strong> onto the board!`);
+                }
             };
         }
 
@@ -7238,23 +7745,49 @@ function renderProfileHistoryTab() {
         gamesPane.appendChild(evCard);
     });
 
-    // Auto-select first chip in QA mode if needed
-    if (prof.is_qa && !selectedHistoryNodeJson) {
-        const firstChip = gamesPane.querySelector('.history-chip');
-        if (firstChip) firstChip.click();
+    // In QA mode, automatically display the first node's schema in the JSON inspector safely
+    if (prof.is_qa && !selectedHistoryNodeJson && history.length > 0) {
+        const firstEv = history[0];
+        if (firstEv && firstEv.moves && firstEv.moves.length > 0) {
+            const firstNode = firstEv.moves[0];
+            selectedHistoryNodeJson = firstNode;
+            const jsonViewer = document.getElementById('qa-pane-json-viewer');
+            const jsonTitle = document.getElementById('qa-pane-node-title');
+            if (jsonTitle) jsonTitle.textContent = `Node #${firstNode.id} (${firstNode.move_san}) Schema`;
+            if (jsonViewer) jsonViewer.textContent = JSON.stringify(firstNode, null, 2);
+        }
     }
+
+    applyHistoryFontScale(historyFontScale);
 }
 
 function createMoveChipElement(node, event, isUndo = false) {
     const chip = document.createElement('button');
     chip.className = 'history-chip';
-    const isBlunder = node.per_move_analysis && node.per_move_analysis.move_classification === 'Blunder';
-    if (isBlunder || isUndo) chip.classList.add('blunder-chip');
+    const pm = node.per_move_analysis || {};
+    const cls = pm.move_classification;
+    const swingType = pm.strategic_swing_type;
+    const swingLabel = pm.strategic_swing_label || '';
 
+    if (cls === 'Blunder' || isUndo) {
+        chip.classList.add('blunder-chip');
+    } else if (cls === 'Missed Opportunity') {
+        chip.classList.add('missed-chip');
+    } else if (swingType === 'game_turnaround') {
+        chip.classList.add('turnaround-chip');
+    } else if (swingType === 'killing_blow') {
+        chip.classList.add('killing-chip');
+    } else if (swingType === 'tenacious_save') {
+        chip.classList.add('save-chip');
+    }
+
+    const stressInfo = node.time_control_metrics ? ` | Stress: ${node.time_control_metrics.stress_index}/100 (${node.time_control_metrics.stress_level})` : '';
+    const swingInfo = swingLabel ? ` | ${swingLabel}` : '';
+    const clockInfo = node.time_control_metrics?.clock_remaining_ms ? ` | Clock: ${Math.round(node.time_control_metrics.clock_remaining_ms / 1000)}s` : '';
     chip.textContent = `${node.move_number}.${node.color === 'b' ? '..' : ''} ${node.move_san}`;
-    chip.title = `Move: ${node.move_san} | Eval: ${node.per_move_analysis?.stockfish_eval ?? 'N/A'} | Classification: ${node.per_move_analysis?.move_classification ?? 'N/A'}`;
+    chip.title = `Move: ${node.move_san} | Eval: ${pm.stockfish_eval ?? 'N/A'}${swingInfo} | Class: ${cls ?? 'N/A'}${stressInfo}${clockInfo}`;
 
-    chip.onclick = (e) => {
+    chip.onclick = async (e) => {
         e.stopPropagation();
         document.querySelectorAll('.history-chip').forEach(b => b.classList.remove('active-chip'));
         chip.classList.add('active-chip');
@@ -7262,11 +7795,15 @@ function createMoveChipElement(node, event, isUndo = false) {
         // Snapshot live game
         snapshotLiveGameIfNeeded();
 
-        // Load position onto main board
+        // Load position onto main board and evaluate with Stockfish
         if (node.fen) {
             currentFen = node.fen;
+            if (node.move_uci && node.move_uci.length >= 4) {
+                lastMoveSquares = [node.move_uci.slice(0, 2), node.move_uci.slice(2, 4)];
+            }
             parseFenToState(currentFen);
             renderBoard();
+            await updatePositionEvaluation(node.fen, []);
         }
 
         // Show banner
@@ -7360,16 +7897,17 @@ function buildProfileDagTree(profile) {
     events.forEach(ev => {
         (ev.moves || []).forEach(n => {
             totalNodes++;
-            const st = n.analysis_status;
-            if (st === 'NEED_ANALYSIS') {
+            const sfSt = n.stockfish_analysis_status || n.analysis_status;
+            const mentorSt = n.mentor_analysis_status || n.analysis_status;
+            if (['NEED_ANALYSIS', 'PENDING', 'PENDING_ANALYSIS'].includes(sfSt) || ['NEED_ANALYSIS', 'PENDING', 'PENDING_ANALYSIS'].includes(mentorSt)) {
                 needAnalysisCount++;
             }
-            if (n.per_sequence_analysis && n.per_sequence_analysis.time_pressure_flag) {
+            if ((n.time_control_metrics && n.time_control_metrics.time_pressure_flag) || (n.per_sequence_analysis && n.per_sequence_analysis.time_pressure_flag)) {
                 timePressureCount++;
             }
             const pm = n.per_move_analysis || {};
             const cls = pm.move_classification;
-            if (['Blunder', 'Mistake', 'Inaccuracy', 'Brilliant', 'Great'].includes(cls)) {
+            if (['Blunder', 'Mistake', 'Inaccuracy', 'Brilliant', 'Great', 'Missed Opportunity'].includes(cls)) {
                 eventfulCount++;
             }
             const flags = pm.six_aspect_flags || {};
@@ -7590,6 +8128,97 @@ function closeEnhancedAnalyticsModal() {
     if (modal) modal.classList.add('hidden');
 }
 
+function openQaDagJsonExplorerModal() {
+    const modal = document.getElementById('qa-dag-json-explorer-modal');
+    if (!modal) return;
+    
+    const selectorEl = document.getElementById('qa-json-game-selector');
+    if (!selectorEl) return;
+    
+    selectorEl.innerHTML = '';
+    const prof = getActiveProfile();
+    const history = (prof && prof.history && prof.history.length > 0) ? prof.history : [];
+
+    if (history.length === 0) {
+        selectorEl.innerHTML = '<div style="color:#a1a1aa; font-size:11px; padding:10px;">No games recorded yet. Play a game to inspect nodes!</div>';
+        modal.classList.remove('hidden');
+        return;
+    }
+
+    history.forEach((g, gIdx) => {
+        const gBox = document.createElement('div');
+        gBox.style.cssText = 'background:#18181b; border:1px solid #27272a; border-radius:6px; padding:8px; margin-bottom:6px;';
+        const moves = g.moves || [];
+        gBox.innerHTML = `
+            <div style="font-weight:bold; font-size:12px; color:#fde047; margin-bottom:2px;">#${gIdx+1} ${g.title || 'Game'} (${g.result || '*'})</div>
+            <div style="font-size:10px; color:#a1a1aa; margin-bottom:6px;">${moves.length} Nodes • ${g.startedAt ? new Date(g.startedAt).toLocaleTimeString() : 'N/A'}</div>
+            <div class="qa-nodes-chip-list" style="display:flex; gap:4px; flex-wrap:wrap;"></div>
+        `;
+        
+        const chipList = gBox.querySelector('.qa-nodes-chip-list');
+        moves.forEach((m, idx) => {
+            const chip = document.createElement('button');
+            const pm = m.per_move_analysis || {};
+            const cls = pm.move_classification || 'Move';
+            const isBlund = cls === 'Blunder';
+            const isMiss = cls === 'Missed Opportunity';
+            const bg = isBlund ? '#7f1d1d' : (isMiss ? '#78350f' : '#27272a');
+            const bcol = isBlund ? '#ef4444' : (isMiss ? '#f59e0b' : '#3f3f46');
+            chip.style.cssText = `background:${bg}; border:1px solid ${bcol}; color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer; font-family:monospace;`;
+            chip.textContent = `${m.move_number}.${m.color === 'b' ? '..' : ''}${m.move_san}`;
+            chip.title = `${cls} (${pm.strategic_swing_label || ''})`;
+            chip.onclick = (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.qa-nodes-chip-list button').forEach(b => b.style.outline = 'none');
+                chip.style.outline = '2px solid #eab308';
+                
+                const labelEl = document.getElementById('qa-json-node-label');
+                if (labelEl) labelEl.textContent = `Node #${m.id} (${m.move_san} - ${cls}) Schema JSON`;
+                
+                const viewerEl = document.getElementById('qa-json-viewer');
+                if (viewerEl) viewerEl.textContent = JSON.stringify(m, null, 2);
+            };
+            chipList.appendChild(chip);
+        });
+
+        selectorEl.appendChild(gBox);
+    });
+
+    const firstChip = selectorEl.querySelector('.qa-nodes-chip-list button');
+    if (firstChip) firstChip.click();
+
+    modal.classList.remove('hidden');
+}
+
+function initQaJsonExplorerEvents() {
+    const btnOpen = document.getElementById('btn-qa-browse-dags-json');
+    if (btnOpen && !btnOpen.dataset.bound) {
+        btnOpen.dataset.bound = 'true';
+        btnOpen.onclick = openQaDagJsonExplorerModal;
+    }
+
+    const btnClose = document.getElementById('btn-close-qa-json-modal');
+    if (btnClose && !btnClose.dataset.bound) {
+        btnClose.dataset.bound = 'true';
+        btnClose.onclick = () => {
+            const modal = document.getElementById('qa-dag-json-explorer-modal');
+            if (modal) modal.classList.add('hidden');
+        };
+    }
+
+    const btnCopy = document.getElementById('btn-copy-qa-node-json');
+    if (btnCopy && !btnCopy.dataset.bound) {
+        btnCopy.dataset.bound = 'true';
+        btnCopy.onclick = () => {
+            const viewerEl = document.getElementById('qa-json-viewer');
+            if (viewerEl && viewerEl.textContent) {
+                navigator.clipboard.writeText(viewerEl.textContent);
+                alert('📋 Copied Node JSON Schema to Clipboard!');
+            }
+        };
+    }
+}
+
 function initEnhancedAnalyticsUI() {
     const btnNav = document.getElementById('header-btn-analytics');
     if (btnNav) btnNav.onclick = openEnhancedAnalyticsModal;
@@ -7604,6 +8233,9 @@ function initEnhancedAnalyticsUI() {
     if (btnAnalyze) {
         btnAnalyze.onclick = triggerSelectiveDagAnalysis;
     }
+
+    initProfileHistoryFontSize();
+    initQaJsonExplorerEvents();
 }
 
 // Selective DAG Analysis Trigger
@@ -7633,9 +8265,13 @@ async function triggerSelectiveDagAnalysis() {
             if (prof.history) {
                 prof.history.forEach(ev => {
                     (ev.moves || []).forEach(n => {
-                        if (n.analysis_status === 'NEED_ANALYSIS') {
-                            n.analysis_status = 'ANALYZED';
+                        if (n.stockfish_analysis_status === 'NEED_ANALYSIS' || n.stockfish_analysis_status === 'PENDING') {
+                            n.stockfish_analysis_status = 'ANALYZED';
                         }
+                        if (n.mentor_analysis_status === 'NEED_ANALYSIS' || n.mentor_analysis_status === 'PENDING') {
+                            n.mentor_analysis_status = 'ANALYZED';
+                        }
+                        delete n.analysis_status;
                     });
                 });
                 saveUserProfilesToStorage();
@@ -7732,7 +8368,7 @@ function openDagNodeBrowserModal(categoryTitle, nodes) {
 }
 
 // Backend Sync & Initialization on Startup
-async function syncProfilesWithBackend() {
+async function syncProfilesWithBackend(forceRefresh = false) {
     try {
         const resp = await fetch('/api/user/profiles');
         if (resp.ok) {
@@ -7741,12 +8377,20 @@ async function syncProfilesWithBackend() {
                 data.profiles.forEach(bp => {
                     const local = userProfiles.find(p => p.id === bp.id);
                     if (local) {
-                        if (bp.history && bp.history.length > 0 && (!local.history || local.history.length < bp.history.length)) {
-                            local.history = bp.history;
-                            local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || bp.history.length;
+                        const localLen = (local.history && Array.isArray(local.history)) ? local.history.length : 0;
+                        const bpLen = (bp.history && Array.isArray(bp.history)) ? bp.history.length : 0;
+                        const shouldUpdate = forceRefresh || !local.history || localLen === 0 || (bpLen > localLen) || bp.is_qa;
+
+                        if (bpLen > 0 && shouldUpdate) {
+                            // Keep any local live games played during this session that aren't on backend
+                            const localLive = (local.history || []).filter(g => g.id && (g.id.startsWith('evt_live_') || g.id.startsWith('evt_saved_')) && !bp.history.some(bg => bg.id === g.id));
+                            local.history = [...localLive, ...bp.history];
+                            local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || local.history.length;
                             local.wins = bp.wins ?? local.wins;
                             local.draws = bp.draws ?? local.draws;
                             local.losses = bp.losses ?? local.losses;
+                        } else if (!local.history) {
+                            local.history = bp.history || [];
                         }
                     } else {
                         userProfiles.push(bp);
