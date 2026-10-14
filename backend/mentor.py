@@ -204,7 +204,14 @@ class MentorService:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=3.0)
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                return []
             if process.returncode == 0 and stdout:
                 raw_text = stdout.decode("utf-8", errors="ignore").strip()
                 data = json.loads(raw_text)
@@ -274,7 +281,16 @@ class MentorService:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=8.0)
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+                print("[MentorService] notebooklm ask timed out after 8s; falling back to local engine.")
+                return {"success": False, "text": ""}
+
             if process.returncode == 0 and stdout:
                 raw_out = stdout.decode("utf-8", errors="ignore").strip()
                 try:

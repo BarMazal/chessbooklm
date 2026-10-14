@@ -7914,20 +7914,93 @@ async function runAtomicAnalysisBatch(taskType) {
     const stagedUpdates = new Map();
 
     try {
-        const batchChunkSize = 12;
-        for (let i = 0; i < totalCount; i++) {
+        const batchChunkSize = (taskType.startsWith('mentor')) ? 20 : 12;
+        for (let i = 0; i < totalCount; i += batchChunkSize) {
             if (activeHistoryAnalysisTask.aborted) {
                 throw new Error('USER_ABORTED');
             }
 
-            const item = targetNodes[i];
-            const node = item.node;
-            const ev = item.event;
+            const chunk = targetNodes.slice(i, i + batchChunkSize);
 
-            const stagedPayload = computeAnalysisPayloadForNode(taskType, node, ev, i);
-            stagedUpdates.set(node.id, stagedPayload);
+            if (taskType.startsWith('mentor')) {
+                // Send state/FEN/sequence/times/blunders to mentor endpoint
+                const reqPayload = chunk.map(item => {
+                    const node = item.node;
+                    const ev = item.event;
+                    const seqMoves = (ev.moves || [])
+                        .filter(m => (m.branch_id === node.branch_id || m.branch_id === 'mainline') && m.move_number <= node.move_number)
+                        .map(m => m.move_san);
+                    return {
+                        node_id: node.id,
+                        fen: node.fen || '',
+                        move_number: node.move_number || 1,
+                        color: node.color || 'w',
+                        move_san: node.move_san || '',
+                        move_uci: node.move_uci || null,
+                        sequence_moves: seqMoves,
+                        time_control_metrics: node.time_control_metrics || null,
+                        running_error_metrics: node.running_error_metrics || null,
+                        eval_context: node.per_move_analysis || null,
+                        analysis_type: taskType
+                    };
+                });
 
-            const processed = i + 1;
+                try {
+                    const resp = await fetch('/api/mentor/batch-node-analysis', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nodes: reqPayload })
+                    });
+                    const data = await resp.json();
+                    if (data && data.results) {
+                        data.results.forEach(res => {
+                            if (taskType === 'mentor_move') {
+                                stagedUpdates.set(res.node_id, {
+                                    mentor_move_analysis: {
+                                        mentor_evaluation: res.analysis.mentor_evaluation,
+                                        pedagogical_concept: res.analysis.pedagogical_concept,
+                                        time_stress_assessment: res.analysis.time_stress_assessment,
+                                        error_frequency_insight: res.analysis.error_frequency_insight,
+                                        recommended_drill: res.analysis.recommended_drill,
+                                        actionable_guideline: res.analysis.actionable_guideline,
+                                        status: 'ANALYZED',
+                                        source: res.provider || 'mentor',
+                                        analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
+                                    },
+                                    mentor_analysis_status: 'ANALYZED'
+                                });
+                            } else if (taskType === 'mentor_seq') {
+                                stagedUpdates.set(res.node_id, {
+                                    mentor_sequence_analysis: {
+                                        sequence_narrative: res.analysis.sequence_narrative,
+                                        sequence_trend: res.analysis.sequence_trend,
+                                        pattern_recognition: res.analysis.pattern_recognition,
+                                        time_pressure_impact: res.analysis.time_stress_assessment,
+                                        error_trend_analysis: res.analysis.error_frequency_insight,
+                                        strategic_advice: res.analysis.strategic_advice,
+                                        status: 'ANALYZED',
+                                        source: res.provider || 'mentor',
+                                        analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
+                                    }
+                                });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[Mentor Batch] API fallback for chunk:', e);
+                    chunk.forEach((item, idx) => {
+                        const payload = computeAnalysisPayloadForNode(taskType, item.node, item.event, i + idx);
+                        stagedUpdates.set(item.node.id, payload);
+                    });
+                }
+            } else {
+                chunk.forEach((item, idx) => {
+                    const payload = computeAnalysisPayloadForNode(taskType, item.node, item.event, i + idx);
+                    stagedUpdates.set(item.node.id, payload);
+                });
+            }
+
+            const processed = Math.min(totalCount, i + chunk.length);
             const pct = Math.round((processed / totalCount) * 100);
             if (progOverlay) progOverlay.style.width = `${pct}%`;
             if (labelEl) {
@@ -7935,9 +8008,7 @@ async function runAtomicAnalysisBatch(taskType) {
                 labelEl.textContent = `⏳ ${shortName}: ${processed}/${totalCount} (${pct}%)`;
             }
 
-            if (i % batchChunkSize === 0 || i === totalCount - 1) {
-                await new Promise(r => setTimeout(r, 16));
-            }
+            await new Promise(r => setTimeout(r, 16));
         }
 
         // ==========================================
@@ -8364,6 +8435,88 @@ if (btnCopyNodeJson) {
             alert('📋 Copied Node JSON Schema to Clipboard!');
         } else {
             alert('Please select a move chip first to copy its JSON schema.');
+        }
+    };
+}
+
+// Mentor Single Node Analysis Button binding
+const btnMentorSingleNode = document.getElementById('btn-mentor-analyze-single-node');
+if (btnMentorSingleNode) {
+    btnMentorSingleNode.onclick = async () => {
+        if (!selectedHistoryNodeJson) {
+            alert('Please select a move chip from the history tree first.');
+            return;
+        }
+        const node = selectedHistoryNodeJson;
+        const prof = getActiveProfile();
+        if (!prof || !prof.history) return;
+
+        const ev = prof.history.find(e => (e.moves || []).some(m => m.id === node.id));
+        const seqMoves = ev ? (ev.moves || [])
+            .filter(m => (m.branch_id === node.branch_id || m.branch_id === 'mainline') && m.move_number <= node.move_number)
+            .map(m => m.move_san) : [node.move_san];
+
+        btnMentorSingleNode.disabled = true;
+        btnMentorSingleNode.textContent = '⏳ Querying Mentor...';
+
+        try {
+            const resp = await fetch('/api/mentor/node-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    node_id: node.id,
+                    fen: node.fen || '',
+                    move_number: node.move_number || 1,
+                    color: node.color || 'w',
+                    move_san: node.move_san || '',
+                    move_uci: node.move_uci || null,
+                    sequence_moves: seqMoves,
+                    time_control_metrics: node.time_control_metrics || null,
+                    running_error_metrics: node.running_error_metrics || null,
+                    eval_context: node.per_move_analysis || null
+                })
+            });
+            const res = await resp.json();
+            if (res.success && res.analysis) {
+                node.mentor_move_analysis = {
+                    mentor_evaluation: res.analysis.mentor_evaluation,
+                    pedagogical_concept: res.analysis.pedagogical_concept,
+                    time_stress_assessment: res.analysis.time_stress_assessment,
+                    error_frequency_insight: res.analysis.error_frequency_insight,
+                    recommended_drill: res.analysis.recommended_drill,
+                    actionable_guideline: res.analysis.actionable_guideline,
+                    status: 'ANALYZED',
+                    source: res.provider || 'mentor',
+                    analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
+                };
+                node.mentor_sequence_analysis = {
+                    sequence_narrative: res.analysis.sequence_narrative,
+                    sequence_trend: res.analysis.sequence_trend,
+                    pattern_recognition: res.analysis.pattern_recognition,
+                    time_pressure_impact: res.analysis.time_stress_assessment,
+                    error_trend_analysis: res.analysis.error_frequency_insight,
+                    strategic_advice: res.analysis.strategic_advice,
+                    status: 'ANALYZED',
+                    source: res.provider || 'mentor',
+                    analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
+                };
+                node.mentor_analysis_status = 'ANALYZED';
+
+                saveUserProfilesToStorage();
+                queueBackendProfilesSync();
+
+                const jsonViewer = document.getElementById('qa-pane-json-viewer');
+                if (jsonViewer) jsonViewer.textContent = JSON.stringify(node, null, 2);
+
+                renderProfileHistoryTab();
+                alert(`✅ Mentor analysis successfully attached to Node #${node.id} (${node.move_san})!`);
+            }
+        } catch (err) {
+            console.error('[Mentor Single] Error:', err);
+            alert(`⚠️ Mentor query failed: ${err.message}`);
+        } finally {
+            btnMentorSingleNode.disabled = false;
+            btnMentorSingleNode.textContent = '🧠 Mentor Analyze';
         }
     };
 }

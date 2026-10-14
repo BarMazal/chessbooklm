@@ -50,7 +50,7 @@
         "startingFen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         "goal": null,
         "opponent": "Human",
-        "totalNodes": 2,
+        "totalNodes": 6,
         "moves": [
           {
             "id": "node_live_1792009371370_0",
@@ -112,7 +112,18 @@
               "eval_swing_last_move": 0.32
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.32 (Eval Delta: +0.32)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Move played impulsively in 1.8s despite 1800.0s on the clock; blitz instinct bypassed verification of tactical replies.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:01.574631"
+            }
           },
           {
             "id": "node_live_1792010713958_0",
@@ -172,6 +183,298 @@
               "time_pressure_flag": false,
               "sequence_trend": "steady",
               "eval_swing_last_move": -0.12
+            },
+            "stockfish_analysis_status": "ANALYZED",
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.2 (Eval Delta: -0.12)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugge",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Measured time management with 300.0s in reserve; calculated for 3.4s under Low stress.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:09.595797"
+            }
+          },
+          {
+            "id": "node_live_1792011576326_0",
+            "event_id": "evt_live_1792009371370",
+            "profile_id": "prof_default",
+            "move_number": 1,
+            "color": "w",
+            "move_san": "c4",
+            "move_uci": "c2c4",
+            "fen": "rnbqkbnr/pppppppp/8/8/2P5/8/PP1PPPPP/RNBQKBNR b KQkq - 0 1",
+            "parent_id": "node_live_1792010713958_0",
+            "branch_id": "mainline",
+            "leaf_termination": null,
+            "time_control_metrics": {
+              "game_full_time_ms": 300000,
+              "time_control_name": "⚡ 5+0 Blitz",
+              "increment_ms": 0,
+              "clock_remaining_ms": 300000,
+              "move_duration_ms": 2881,
+              "time_spent_ratio": 0.01,
+              "time_pressure_flag": false,
+              "stress_index": 11,
+              "stress_level": "Low"
+            },
+            "per_move_analysis": {
+              "stockfish_eval": "+0.07",
+              "eval_val": 0.07,
+              "prev_eval_val": 0.2,
+              "depth": 12,
+              "best_move_uci": "e7e5",
+              "best_move_san": "e5",
+              "eval_source": "local_stockfish",
+              "eval_delta": -0.13,
+              "win_probability_before": 52.9,
+              "win_probability_after": 51,
+              "win_probability_delta": -1.9,
+              "move_classification": "Book",
+              "strategic_swing_type": "book_move",
+              "strategic_swing_label": "📖 Opening Book",
+              "is_critical_moment": false,
+              "is_check": false,
+              "is_capture": false,
+              "six_aspect_flags": null,
+              "tactical_category": null,
+              "tactical_sub_category": null
+            },
+            "running_error_metrics": {
+              "running_blunder_count": 0,
+              "running_missed_opportunities_count": 0,
+              "running_mistake_count": 0,
+              "running_inaccuracy_count": 0,
+              "blunder_frequency": 0,
+              "missed_opportunity_frequency": 0,
+              "running_accuracy_pct": 100
+            },
+            "per_sequence_analysis": {
+              "time_pressure_flag": false,
+              "sequence_trend": "steady",
+              "eval_swing_last_move": -0.13
+            },
+            "stockfish_analysis_status": "ANALYZED",
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.07 (Eval Delta: -0.13)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Measured time management with 300.0s in reserve; calculated for 2.9s under Low stress.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:17.638416"
+            }
+          },
+          {
+            "id": "node_live_1792011661599_0",
+            "event_id": "evt_live_1792009371370",
+            "profile_id": "prof_default",
+            "move_number": 1,
+            "color": "w",
+            "move_san": "d4",
+            "move_uci": "d2d4",
+            "fen": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1",
+            "parent_id": "node_live_1792011576326_0",
+            "branch_id": "mainline",
+            "leaf_termination": null,
+            "time_control_metrics": {
+              "game_full_time_ms": 300000,
+              "time_control_name": "⚡ 5+0 Blitz",
+              "increment_ms": 0,
+              "clock_remaining_ms": 300000,
+              "move_duration_ms": 36639,
+              "time_spent_ratio": 0.109,
+              "time_pressure_flag": false,
+              "stress_index": 12,
+              "stress_level": "Low"
+            },
+            "per_move_analysis": {
+              "stockfish_eval": "+0.23",
+              "eval_val": 0.23,
+              "prev_eval_val": 0.07,
+              "depth": 12,
+              "best_move_uci": "d7d5",
+              "best_move_san": "d5",
+              "eval_source": "local_stockfish",
+              "eval_delta": 0.16,
+              "win_probability_before": 51,
+              "win_probability_after": 53.3,
+              "win_probability_delta": 2.3,
+              "move_classification": "Book",
+              "strategic_swing_type": "book_move",
+              "strategic_swing_label": "📖 Opening Book",
+              "is_critical_moment": false,
+              "is_check": false,
+              "is_capture": false,
+              "six_aspect_flags": null,
+              "tactical_category": null,
+              "tactical_sub_category": null
+            },
+            "running_error_metrics": {
+              "running_blunder_count": 0,
+              "running_missed_opportunities_count": 0,
+              "running_mistake_count": 0,
+              "running_inaccuracy_count": 0,
+              "blunder_frequency": 0,
+              "missed_opportunity_frequency": 0,
+              "running_accuracy_pct": 100
+            },
+            "per_sequence_analysis": {
+              "time_pressure_flag": false,
+              "sequence_trend": "steady",
+              "eval_swing_last_move": 0.16
+            },
+            "stockfish_analysis_status": "ANALYZED",
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.23 (Eval Delta: +0.16)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Measured time management with 300.0s in reserve; calculated for 36.6s under Low stress.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:25.694291"
+            }
+          },
+          {
+            "id": "node_live_1792011662472_1",
+            "event_id": "evt_live_1792009371370",
+            "profile_id": "prof_default",
+            "move_number": 1,
+            "color": "b",
+            "move_san": "Nf6",
+            "move_uci": "g8f6",
+            "fen": "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 1 2",
+            "parent_id": "node_live_1792011661599_0",
+            "branch_id": "mainline",
+            "leaf_termination": null,
+            "time_control_metrics": {
+              "game_full_time_ms": 300000,
+              "time_control_name": "⚡ 5+0 Blitz",
+              "increment_ms": 0,
+              "clock_remaining_ms": 300000,
+              "move_duration_ms": 872,
+              "time_spent_ratio": 0.003,
+              "time_pressure_flag": false,
+              "stress_index": 10,
+              "stress_level": "Low"
+            },
+            "per_move_analysis": {
+              "stockfish_eval": "+0.22",
+              "eval_val": 0.22,
+              "prev_eval_val": 0.23,
+              "depth": 12,
+              "best_move_uci": "c2c4",
+              "best_move_san": "c4",
+              "eval_source": "local_stockfish",
+              "eval_delta": 0.01,
+              "win_probability_before": 46.7,
+              "win_probability_after": 46.8,
+              "win_probability_delta": 0.1,
+              "move_classification": "Book",
+              "strategic_swing_type": "book_move",
+              "strategic_swing_label": "📖 Opening Book",
+              "is_critical_moment": false,
+              "is_check": false,
+              "is_capture": false,
+              "six_aspect_flags": null,
+              "tactical_category": null,
+              "tactical_sub_category": null
+            },
+            "running_error_metrics": {
+              "running_blunder_count": 0,
+              "running_missed_opportunities_count": 0,
+              "running_mistake_count": 0,
+              "running_inaccuracy_count": 0,
+              "blunder_frequency": 0,
+              "missed_opportunity_frequency": 0,
+              "running_accuracy_pct": 100
+            },
+            "per_sequence_analysis": {
+              "time_pressure_flag": false,
+              "sequence_trend": "steady",
+              "eval_swing_last_move": 0.01
+            },
+            "stockfish_analysis_status": "ANALYZED",
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.22 (Eval Delta: +0.01)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Move played impulsively in 0.9s despite 300.0s on the clock; blitz instinct bypassed verification of tactical replies.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:33.837156"
+            }
+          },
+          {
+            "id": "node_live_1792012222730_0",
+            "event_id": "evt_live_1792009371370",
+            "profile_id": "prof_default",
+            "move_number": 1,
+            "color": "w",
+            "move_san": "Nf3",
+            "move_uci": "g1f3",
+            "fen": "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1",
+            "parent_id": "node_live_1792011662472_1",
+            "branch_id": "mainline",
+            "leaf_termination": null,
+            "time_control_metrics": {
+              "game_full_time_ms": 300000,
+              "time_control_name": "⚡ 5+0 Blitz",
+              "increment_ms": 0,
+              "clock_remaining_ms": 300000,
+              "move_duration_ms": 2782,
+              "time_spent_ratio": 0.009,
+              "time_pressure_flag": false,
+              "stress_index": 10,
+              "stress_level": "Low"
+            },
+            "per_move_analysis": {
+              "stockfish_eval": "+0.19",
+              "eval_val": 0.19,
+              "prev_eval_val": 0.22,
+              "depth": 12,
+              "best_move_uci": "d7d5",
+              "best_move_san": "d5",
+              "eval_source": "local_stockfish",
+              "eval_delta": -0.03,
+              "win_probability_before": 53.2,
+              "win_probability_after": 52.7,
+              "win_probability_delta": -0.5,
+              "move_classification": "Book",
+              "strategic_swing_type": "book_move",
+              "strategic_swing_label": "📖 Opening Book",
+              "is_critical_moment": false,
+              "is_check": false,
+              "is_capture": false,
+              "six_aspect_flags": null,
+              "tactical_category": null,
+              "tactical_sub_category": null
+            },
+            "running_error_metrics": {
+              "running_blunder_count": 0,
+              "running_missed_opportunities_count": 0,
+              "running_mistake_count": 0,
+              "running_inaccuracy_count": 0,
+              "blunder_frequency": 0,
+              "missed_opportunity_frequency": 0,
+              "running_accuracy_pct": 100
+            },
+            "per_sequence_analysis": {
+              "time_pressure_flag": false,
+              "sequence_trend": "steady",
+              "eval_swing_last_move": -0.03
             },
             "stockfish_analysis_status": "ANALYZED",
             "mentor_analysis_status": "PENDING"
@@ -250,7 +553,18 @@
               "eval_swing_last_move": 0.34
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.34 (Eval Delta: +0.34)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Measured time management with 300.0s in reserve; calculated for 42.2s under Low stress.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:41.874106"
+            }
           },
           {
             "id": "node_live_1792004510801_1",
@@ -312,7 +626,18 @@
               "eval_swing_last_move": -0.27
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.61 (Eval Delta: -0.27)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Move played impulsively in 1.0s despite 299.4s on the clock; blitz instinct bypassed verification of tactical replies.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:49.901441"
+            }
           }
         ]
       },
@@ -388,7 +713,18 @@
               "eval_swing_last_move": 0.12
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.12 (Eval Delta: +0.12)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Measured time management with 300.0s in reserve; calculated for 2.9s under Low stress.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:04:57.919276"
+            }
           },
           {
             "id": "node_live_1792004455083_1",
@@ -450,7 +786,18 @@
               "eval_swing_last_move": -0.12
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: +0.24 (Eval Delta: -0.12)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugg",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Move played impulsively in 0.5s despite 299.5s on the clock; blitz instinct bypassed verification of tactical replies.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:05:05.942406"
+            }
           },
           {
             "id": "node_live_1792004456090_2",
@@ -512,7 +859,18 @@
               "eval_swing_last_move": -0.24
             },
             "stockfish_analysis_status": "ANALYZED",
-            "mentor_analysis_status": "PENDING"
+            "mentor_analysis_status": "ANALYZED",
+            "mentor_move_analysis": {
+              "mentor_evaluation": "### ♟️ Strategic & Positional Analysis\n\n**1. Position Evaluation & Control**\n- Stockfish Evaluation: 0.0 (Eval Delta: -0.24)\nIn this game phase, key focus areas include controlling the central squares (d4, d5, e4, e5), securing piece coordination, and ensuring King safety before launching pawn pushes or flank attacks.\n\n**2. Tactical & Engine Sugges",
+              "pedagogical_concept": "Positional Harmony & Piece Coordination",
+              "time_stress_assessment": "Move played impulsively in 1.0s despite 299.0s on the clock; blitz instinct bypassed verification of tactical replies.",
+              "error_frequency_insight": "Solid structural precision with 100.0% running accuracy and 0 blunders in this game branch.",
+              "recommended_drill": "Middle-Game Piece Coordination & Outpost Exploitation",
+              "actionable_guideline": "Activate your least active piece and coordinate rooks along central files.",
+              "status": "ANALYZED",
+              "source": "Chess AI Mentor (Local Strategy Engine)",
+              "analyzed_at": "2026-10-14T21:05:13.958813"
+            }
           }
         ]
       }

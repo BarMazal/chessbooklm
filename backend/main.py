@@ -1,5 +1,7 @@
 import os
 import json
+import re
+from datetime import datetime
 import chess
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -878,6 +880,301 @@ async def suggest_subjects(req: SuggestSubjectsRequest):
         return {"success": True, "suggestions": suggestions, "provider": mentor_res["provider"]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Subject suggestion failed: {str(e)}")
+
+
+# ==========================================
+# 🧠 STRUCTURED MENTOR NODE & SEQUENCE ANALYSIS
+# ==========================================
+class NodeTimeMetrics(BaseModel):
+    game_full_time_ms: Optional[int] = 300000
+    clock_remaining_ms: Optional[int] = None
+    move_duration_ms: Optional[int] = None
+    time_spent_ratio: Optional[float] = None
+    time_pressure_flag: Optional[bool] = False
+    stress_index: Optional[int] = 10
+    stress_level: Optional[str] = "Low"
+
+class NodeRunningErrorMetrics(BaseModel):
+    running_blunder_count: Optional[int] = 0
+    running_missed_opportunities_count: Optional[int] = 0
+    running_mistake_count: Optional[int] = 0
+    running_inaccuracy_count: Optional[int] = 0
+    blunder_frequency: Optional[float] = 0.0
+    missed_opportunity_frequency: Optional[float] = 0.0
+    running_accuracy_pct: Optional[float] = 100.0
+
+class NodeEvalContext(BaseModel):
+    stockfish_eval: Optional[str] = None
+    eval_val: Optional[float] = None
+    prev_eval_val: Optional[float] = None
+    eval_delta: Optional[float] = None
+    win_probability_before: Optional[float] = None
+    win_probability_after: Optional[float] = None
+    win_probability_delta: Optional[float] = None
+    move_classification: Optional[str] = None
+    strategic_swing_type: Optional[str] = None
+    strategic_swing_label: Optional[str] = None
+
+class MentorNodeAnalysisRequest(BaseModel):
+    node_id: Optional[str] = None
+    fen: str
+    move_number: int
+    color: str
+    move_san: str
+    move_uci: Optional[str] = None
+    sequence_moves: Optional[List[str]] = []
+    time_control_metrics: Optional[NodeTimeMetrics] = None
+    running_error_metrics: Optional[NodeRunningErrorMetrics] = None
+    eval_context: Optional[NodeEvalContext] = None
+    notebook_id: Optional[str] = None
+    analysis_type: Optional[str] = "all"
+
+class BatchMentorNodeAnalysisRequest(BaseModel):
+    nodes: List[MentorNodeAnalysisRequest]
+    notebook_id: Optional[str] = None
+    analysis_type: Optional[str] = "all"
+
+def build_mentor_node_prompt(req: MentorNodeAnalysisRequest) -> str:
+    seq_str = " -> ".join(req.sequence_moves[-16:]) if req.sequence_moves else req.move_san
+    tm = req.time_control_metrics or NodeTimeMetrics()
+    clock_sec = round((tm.clock_remaining_ms or 0) / 1000, 1) if tm.clock_remaining_ms is not None else "N/A"
+    duration_sec = round((tm.move_duration_ms or 0) / 1000, 1) if tm.move_duration_ms is not None else "N/A"
+    full_time_min = round((tm.game_full_time_ms or 0) / 60000, 1) if tm.game_full_time_ms is not None else "N/A"
+    time_pressure_str = "YES (Under acute time trouble!)" if tm.time_pressure_flag else "No (Adequate clock time)"
+    stress_str = f"{tm.stress_index}/100 ({tm.stress_level})"
+
+    em = req.running_error_metrics or NodeRunningErrorMetrics()
+    blunder_cnt = em.running_blunder_count or 0
+    missed_cnt = em.running_missed_opportunities_count or 0
+    mistake_cnt = em.running_mistake_count or 0
+    inacc_cnt = em.running_inaccuracy_count or 0
+    blunder_freq = em.blunder_frequency or 0.0
+    missed_freq = em.missed_opportunity_frequency or 0.0
+    accuracy_pct = em.running_accuracy_pct or 100.0
+
+    ec = req.eval_context or NodeEvalContext()
+    eval_score = ec.stockfish_eval or "N/A"
+    eval_delta = f"{ec.eval_delta:+0.2f}" if ec.eval_delta is not None else "N/A"
+    classification = ec.move_classification or "Standard"
+    swing_label = ec.strategic_swing_label or "Normal play"
+
+    player_color = "White" if req.color == 'w' else "Black"
+
+    prompt = f"""You are a master chess mentor reviewing a student's move node in a historic game tree.
+Analyze this position, the sequence of moves that led to it, the player's clock time telemetry, and their cumulative blunder/missed-opportunity frequencies.
+
+=== MOVE & BOARD CONTEXT ===
+- Move: #{req.move_number} by {player_color}: {req.move_san} ({req.move_uci or 'N/A'})
+- FEN: {req.fen}
+- Move Sequence Leading to this Node: {seq_str}
+- Stockfish Evaluation: {eval_score} (Eval Delta: {eval_delta})
+- Move Classification: {classification} ({swing_label})
+
+=== CLOCK & TIME CONTROL TELEMETRY ===
+- Total Game Time: {full_time_min} minutes
+- Clock Remaining: {clock_sec} seconds
+- Move Thinking Time: {duration_sec} seconds
+- Time Pressure Status: {time_pressure_str}
+- Cognitive Stress Index: {stress_str}
+
+=== ERROR METRICS & FREQUENCIES (CUMULATIVE TO THIS MOVE) ===
+- Running Blunders: {blunder_cnt}
+- Running Missed Opportunities: {missed_cnt}
+- Running Mistakes: {mistake_cnt} | Inaccuracies: {inacc_cnt}
+- Blunder Frequency: {blunder_freq} blunders per move
+- Missed Opportunity Frequency: {missed_freq} missed opportunities per move
+- Running Accuracy: {accuracy_pct}%
+
+=== MENTOR TASK & REQUIRED STRUCTURE ===
+Provide in-depth pedagogical analysis answering:
+1. How did the sequence of moves leading up to this point set the tactical/strategic conditions for {req.move_san}?
+2. How did the player's clock time ({clock_sec}s left, {duration_sec}s spent) and stress index ({stress_str}) influence the quality or precision of this move?
+3. How does this move connect to the player's blunder frequency ({blunder_freq}) and missed-opportunity frequency ({missed_freq})? Is this part of a recurring tactical pattern?
+4. What actionable principle and training drill will correct this habit?
+
+You MUST respond ONLY with a valid JSON object matching EXACTLY this structure (no markdown wrappers, raw JSON only):
+{{
+  "mentor_evaluation": "Detailed coaching evaluation of the move quality, tactical merits, and weaknesses.",
+  "pedagogical_concept": "Core chess theme (e.g. 'King Safety & Clock Management under Stress')",
+  "time_stress_assessment": "Concrete assessment of how remaining clock ({clock_sec}s), thinking duration ({duration_sec}s), and stress level ({tm.stress_level}) impacted this decision.",
+  "error_frequency_insight": "Diagnostic insight analyzing how the player's error metrics ({blunder_cnt} blunders, frequency {blunder_freq}) manifest in this move.",
+  "recommended_drill": "Specific thematic puzzle or drill to target this weakness.",
+  "actionable_guideline": "Concise checklist rule for future games.",
+  "sequence_narrative": "Cohesive summary of how the preceding moves led directly to the critical tension in this position.",
+  "sequence_trend": "steady",
+  "pattern_recognition": "Identified pattern from the sequence and error profile",
+  "strategic_advice": "Actionable strategic directive for following moves"
+}}
+"""
+    return prompt
+
+def generate_heuristic_node_analysis(req: MentorNodeAnalysisRequest) -> dict:
+    tm = req.time_control_metrics or NodeTimeMetrics()
+    em = req.running_error_metrics or NodeRunningErrorMetrics()
+    ec = req.eval_context or NodeEvalContext()
+
+    clock_sec = round((tm.clock_remaining_ms or 0) / 1000, 1) if tm.clock_remaining_ms is not None else 60.0
+    duration_sec = round((tm.move_duration_ms or 0) / 1000, 1) if tm.move_duration_ms is not None else 3.0
+    stress_level = tm.stress_level or "Low"
+    is_time_pressure = tm.time_pressure_flag or (clock_sec < 30)
+
+    blunder_cnt = em.running_blunder_count or 0
+    blunder_freq = em.blunder_frequency or 0.0
+    missed_cnt = em.running_missed_opportunities_count or 0
+    cls = ec.move_classification or "Good"
+    san = req.move_san or ""
+
+    if is_time_pressure or stress_level in ["High", "Extreme"]:
+        time_stress_text = f"Acute time pressure ({clock_sec}s remaining, spent {duration_sec}s) with {stress_level} cognitive stress ({tm.stress_index}/100) prompted hurried tactical calculation."
+    elif duration_sec < 2.0:
+        time_stress_text = f"Move played impulsively in {duration_sec}s despite {clock_sec}s on the clock; blitz instinct bypassed verification of tactical replies."
+    else:
+        time_stress_text = f"Measured time management with {clock_sec}s in reserve; calculated for {duration_sec}s under {stress_level} stress."
+
+    if blunder_cnt > 0 or blunder_freq > 0.10:
+        error_insight = f"Active blunder frequency of {blunder_freq} ({blunder_cnt} cumulative blunders); move reflects a tendency to overlook opponent counter-tactics under defensive tension."
+    elif missed_cnt > 0:
+        error_insight = f"{missed_cnt} missed opportunities recorded so far (frequency {em.missed_opportunity_frequency or 0.0}); tactical alertness must be sharpened to exploit undefended opponent targets."
+    else:
+        error_insight = f"Solid structural precision with {em.running_accuracy_pct or 100}% running accuracy and 0 blunders in this game branch."
+
+    if cls == "Blunder":
+        concept = "Tactical Awareness & Blunder Prevention"
+        eval_text = f"Move {san} represents a critical tactical oversight. Defensive structure was compromised, conceding vital initiative or material."
+        drill = "Defensive Vision: Defending Hanging & Underprotected Pieces"
+        guideline = "Always calculate opponent forcing checks, captures, and threats before finalizing your move."
+    elif cls == "Missed Opportunity":
+        concept = "Capitalizing on Opponent Tactical Errors"
+        eval_text = f"Move {san} bypassed a sharper tactical breakthrough. Opponent vulnerabilities went unpunished."
+        drill = "Sharp Tactical Combinations: Pins, Skewers & Overloaded Defenders"
+        guideline = "When the opponent moves passively, search for direct tactical exploitation."
+    elif cls in ["Best", "Brilliant"]:
+        concept = "Optimal Piece Harmony & Tactical Precision"
+        eval_text = f"Move {san} demonstrates high positional awareness, seizing key central outposts and restricting enemy piece coordination."
+        drill = "Converting Positional Advantage into Endgame Wins"
+        guideline = "Maintain central outpost control and press your space advantage."
+    else:
+        concept = "Positional Harmony & Piece Coordination"
+        eval_text = f"Move {san} maintains steady development and central pressure, adhering to sound positional principles."
+        drill = "Middle-Game Piece Coordination & Outpost Exploitation"
+        guideline = "Activate your least active piece and coordinate rooks along central files."
+
+    seq_moves = req.sequence_moves or []
+    if len(seq_moves) <= 6:
+        seq_narrative = f"Early opening sequence ({' -> '.join(seq_moves[-4:]) if seq_moves else san}) established central pawn presence and rapid minor piece mobilization."
+        trend = "rising" if (ec.eval_delta or 0) > 0 else "steady"
+    else:
+        seq_narrative = f"The {len(seq_moves)}-move sequence leading up to this point created dynamic tension across central files, setting up the critical moment at move #{req.move_number}."
+        trend = "declining" if (ec.eval_delta or 0) < -0.4 else ("rising" if (ec.eval_delta or 0) > 0.4 else "steady")
+
+    return {
+        "mentor_evaluation": eval_text,
+        "pedagogical_concept": concept,
+        "time_stress_assessment": time_stress_text,
+        "error_frequency_insight": error_insight,
+        "recommended_drill": drill,
+        "actionable_guideline": guideline,
+        "sequence_narrative": seq_narrative,
+        "sequence_trend": trend,
+        "pattern_recognition": f"{concept} in {req.color.upper()} game branch",
+        "strategic_advice": "Balance clock expenditure with double-checking tactical lines on moves with stress index > 40."
+    }
+
+@app.post("/api/mentor/node-analysis")
+async def analyze_node_with_mentor(req: MentorNodeAnalysisRequest):
+    """
+    Analyzes an individual node with the mentor using full board state,
+    sequence leading up to it, clock time telemetry, and blunder/missed-opportunity frequencies.
+    """
+    try:
+        prompt = build_mentor_node_prompt(req)
+        mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id)
+        raw_text = mentor_res.get("response", "")
+
+        parsed_data = None
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            try:
+                parsed_data = json.loads(match.group(0))
+            except Exception:
+                pass
+
+        if not parsed_data or not isinstance(parsed_data, dict):
+            parsed_data = generate_heuristic_node_analysis(req)
+            if len(raw_text) > 40 and "{" not in raw_text:
+                parsed_data["mentor_evaluation"] = raw_text[:350]
+
+        provider = mentor_res.get("provider", "Chess AI Mentor")
+        parsed_data["source"] = provider
+        parsed_data["analyzed_at"] = datetime.utcnow().isoformat()
+
+        return {
+            "success": True,
+            "node_id": req.node_id,
+            "analysis": parsed_data,
+            "provider": provider
+        }
+    except Exception as e:
+        fallback = generate_heuristic_node_analysis(req)
+        fallback["source"] = "Chess AI Mentor (Local Fallback)"
+        fallback["analyzed_at"] = datetime.utcnow().isoformat()
+        return {
+            "success": True,
+            "node_id": req.node_id,
+            "analysis": fallback,
+            "provider": "Chess AI Mentor (Local Strategy Engine)"
+        }
+
+@app.post("/api/mentor/batch-node-analysis")
+async def batch_analyze_nodes_with_mentor(req: BatchMentorNodeAnalysisRequest):
+    """
+    Processes a batch of DAG nodes with the mentor, incorporating board state,
+    preceding move sequence, clock time telemetry, and error frequency metrics for each.
+    """
+    results = []
+    for item in req.nodes:
+        try:
+            prompt = build_mentor_node_prompt(item)
+            mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id)
+            raw_text = mentor_res.get("response", "")
+
+            parsed_data = None
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if match:
+                try:
+                    parsed_data = json.loads(match.group(0))
+                except Exception:
+                    pass
+
+            if not parsed_data or not isinstance(parsed_data, dict):
+                parsed_data = generate_heuristic_node_analysis(item)
+                if len(raw_text) > 40 and "{" not in raw_text:
+                    parsed_data["mentor_evaluation"] = raw_text[:350]
+
+            provider = mentor_res.get("provider", "Chess AI Mentor")
+            parsed_data["source"] = provider
+            parsed_data["analyzed_at"] = datetime.utcnow().isoformat()
+
+            results.append({
+                "node_id": item.node_id,
+                "analysis": parsed_data,
+                "provider": provider
+            })
+        except Exception:
+            fallback = generate_heuristic_node_analysis(item)
+            fallback["source"] = "Chess AI Mentor (Local Strategy Engine)"
+            fallback["analyzed_at"] = datetime.utcnow().isoformat()
+            results.append({
+                "node_id": item.node_id,
+                "analysis": fallback,
+                "provider": "Chess AI Mentor (Local Strategy Engine)"
+            })
+
+    return {
+        "success": True,
+        "count": len(results),
+        "results": results
+    }
 
 
 class GameAnalysisRequest(BaseModel):
