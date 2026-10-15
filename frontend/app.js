@@ -801,11 +801,11 @@ bindBtn('btn-create-profile', handleCreateProfile);
     safeInit(initProfileSubtabs, 'initProfileSubtabs');
     safeInit(initPlacementTestModule, 'initPlacementTestModule');
 
-    // 4. START INITIAL GAME POSITION
+    // 4. SHOW AN IDLE BOARD: a game (clocks, bot moves, recording) starts only from Quick Start / New Game
     try {
-        startNewGame();
+        await showIdleBoard();
     } catch (e) {
-        console.warn("startNewGame error:", e);
+        console.warn("showIdleBoard error:", e);
     }
 
     initPalettePieces();
@@ -916,8 +916,7 @@ bindBtn('btn-create-profile', handleCreateProfile);
     initPlacementTestModule();
     initChessClockModule();
 
-    // Strictly run Quick New Game on app startup to apply persistent new game settings immediately!
-    startNewGame();
+    // No game is started on load (see showIdleBoard); Quick Start / New Game starts one.
 });
 
 function initTabs() {
@@ -1423,8 +1422,19 @@ function openPromotionModal(matchingMoves, activeTurnColor) {
 
 let isExecutingMove = false;
 let pendingGameOverOutcome = null;
+// False until Quick Start / New Game. While idle the board can be explored, but nothing is
+// recorded, no clock runs and the computer does not move.
+let isGameActive = false;
+let botMoveInFlight = false;
 
 async function executeMove(sanMove, uciMove) {
+    // Never apply two moves at once, and never a move that is not legal in the current position
+    // (a stale bot reply used to be played twice, duplicating moves and recording the mate in a new session).
+    if (isExecutingMove) return;
+    if (legalMoves.length > 0 && !legalMoves.some(m => m.uci === uciMove)) {
+        console.warn(`[Move] Ignored ${sanMove} (${uciMove}): not legal in the current position`);
+        return;
+    }
     isExecutingMove = true;
     try {
         if (gameSettings.enableSound) {
@@ -1891,7 +1901,38 @@ async function startNewGame(customConfig = null) {
     }
 
     saveGameSettingsToStorage();
+    closeStaleLiveEvents();
+    isGameActive = true;
     await resetBoardState();
+}
+
+// Games left 'in_progress' by a page reload can never be continued; mark them unfinished.
+function closeStaleLiveEvents() {
+    let changed = false;
+    userProfiles.forEach(p => (p.history || []).forEach(ev => {
+        if (ev.result === 'in_progress' && ev !== activeLiveGameEvent) {
+            ev.result = 'unfinished';
+            ev.endedAt = ev.endedAt || new Date().toISOString();
+            changed = true;
+        }
+    }));
+    if (changed) saveUserProfilesToStorage();
+}
+
+// Initial state on app load: standard position, paused, nothing recorded until a game is started.
+async function showIdleBoard() {
+    isGameActive = false;
+    isAutoPaused = true;
+    updatePauseResumeButtonUI();
+    startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    currentFen = startFen;
+    moveHistory = [];
+    moveStackUci = [];
+    lastMoveSquares = [];
+    parseFenToState(currentFen);
+    renderBoard();
+    if (typeof resetChessClocks === 'function') resetChessClocks();
+    await updatePositionEvaluation();
 }
 
 async function resetBoard() {
@@ -2156,7 +2197,19 @@ function updateDifficultyUIControls() {
 
 
 async function makeBotMove() {
-    if (legalMoves.length === 0) return;
+    if (legalMoves.length === 0 || botMoveInFlight || isExecutingMove) return;
+    botMoveInFlight = true;
+    try {
+        await requestAndPlayBotMove();
+    } finally {
+        botMoveInFlight = false;
+    }
+}
+
+async function requestAndPlayBotMove() {
+    const plyAtRequest = moveHistory.length;
+    const fenAtRequest = currentFen;
+    const positionUnchanged = () => moveHistory.length === plyAtRequest && currentFen === fenAtRequest;
 
     const activeTurnColor = currentFen.split(' ')[1]; // 'w' or 'b'
     const isWhiteAuto = (gameSettings.whitePlayerMode === 'auto');
@@ -2190,6 +2243,7 @@ async function makeBotMove() {
             })
         });
         const data = await resp.json();
+        if (!positionUnchanged()) return; // the position moved on while we waited
         if (data.move_uci && data.move_san) {
             await executeMove(data.move_san, data.move_uci);
             return;
@@ -2198,6 +2252,7 @@ async function makeBotMove() {
         console.error('Failed to fetch bot move:', e);
     }
 
+    if (!positionUnchanged() || legalMoves.length === 0) return;
     const bestMoveObj = legalMoves.find(m => m.uci === bestMoveArrow) || legalMoves[0];
     await executeMove(bestMoveObj.san, bestMoveObj.uci);
 }
@@ -2846,7 +2901,7 @@ function checkAndTriggerAutoMove() {
     }
 
     if (!currentFen || legalMoves.length === 0) return;
-    if (isAutoPaused) return;
+    if (isAutoPaused || !isGameActive) return;
 
     const activeColor = currentFen.split(' ')[1]; // 'w' or 'b'
     const isWhiteAuto = (activeColor === 'w' && gameSettings.whitePlayerMode === 'auto');
@@ -2865,6 +2920,14 @@ function handleShowHintClick() {
 }
 
 function togglePauseResume() {
+    if (!isGameActive) {
+        if (moveHistory.length === 0) {
+            startNewGame();
+        } else {
+            showGameToast('▶️ Start a <strong>New Game</strong> to play against the computer and record the game.');
+        }
+        return;
+    }
     isAutoPaused = !isAutoPaused;
     updatePauseResumeButtonUI();
     if (isAutoPaused) {
@@ -3565,25 +3628,7 @@ function saveCurrentGame() {
                 parent_id: parentId,
                 branch_id: 'mainline',
                 leaf_termination: null,
-                per_move_analysis: {
-                    stockfish_eval: '+0.0',
-                    eval_delta: 0.05,
-                    best_move_uci: uci,
-                    best_move_san: san,
-                    move_classification: 'Good',
-                    six_aspect_flags: {
-                        offensive_creation: false,
-                        offensive_execution: false,
-                        offensive_yield: 0,
-                        defensive_prevention: false,
-                        defensive_failure: false,
-                        defensive_damage: 0
-                    },
-                    tactical_category: 'saved_game',
-                    tactical_sub_category: 'custom'
-                },
-                stockfish_analysis_status: 'ANALYZED',
-                mentor_analysis_status: 'ANALYZED'
+                analysis: null // filled by Stockfish / mentor analysis (intermediate FENs are rebuilt from the moves)
             });
             parentId = nodeId;
         });
@@ -3692,7 +3737,7 @@ async function loadProfileEventToBoard(ev) {
     startFen = ev.startingFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     currentFen = startFen;
 
-    const mainlineMoves = ev.moves.filter(m => m.branch_id === 'mainline');
+    const mainlineMoves = ev.moves.filter(m => m.branch_id === 'mainline' && m.leaf_termination !== 'abandoned_undo');
     mainlineMoves.forEach(m => {
         moveHistory.push(m.move_san);
         moveStackUci.push(m.move_uci);
@@ -4041,6 +4086,25 @@ function initUserProfileModule() {
     }
 }
 
+// Schema v2 migration: drop every pre-v2 analysis field (they were mostly template text and fake evals)
+// and keep only the raw recording. Nodes are re-analysed with real Stockfish / NotebookLM on demand.
+const LEGACY_NODE_ANALYSIS_KEYS = [
+    'per_move_analysis', 'per_sequence_analysis', 'mentor_move_analysis', 'mentor_sequence_analysis',
+    'six_aspect_metrics', 'six_aspect_flags', 'general_classification', 'context',
+    'stockfish_analysis_status', 'mentor_analysis_status', 'analysis_status', 'running_error_metrics'
+];
+function migrateProfileNodesToAnalysisV2(profile) {
+    let changed = false;
+    (profile?.history || []).forEach(ev => (ev.moves || []).forEach(n => {
+        LEGACY_NODE_ANALYSIS_KEYS.forEach(k => {
+            if (k in n) { delete n[k]; changed = true; }
+        });
+        if (n.analysis && n.analysis.schema_version !== NODE_ANALYSIS_SCHEMA) { n.analysis = null; changed = true; }
+        if (!('analysis' in n)) { n.analysis = null; changed = true; }
+    }));
+    return changed;
+}
+
 function loadUserProfilesFromStorage() {
     const savedProfiles = localStorage.getItem('chess_user_profiles');
     const savedActiveId = localStorage.getItem('chess_active_profile_id');
@@ -4063,26 +4127,7 @@ function loadUserProfilesFromStorage() {
                 }
             });
 
-            // Migrate analysis_status to stockfish_analysis_status & mentor_analysis_status
-            userProfiles.forEach(p => {
-                const isQa = p.id === 'prof_qa_tester' || p.is_qa;
-                (p.history || []).forEach(ev => {
-                    (ev.moves || []).forEach(n => {
-                        if (n.analysis_status || !n.stockfish_analysis_status) {
-                            const prevSt = n.analysis_status || 'ANALYZED';
-                            n.stockfish_analysis_status = prevSt;
-                            n.mentor_analysis_status = prevSt;
-                            delete n.analysis_status;
-                        }
-                        if (isQa) {
-                            n.per_move_analysis = null;
-                            n.per_sequence_analysis = null;
-                            n.stockfish_analysis_status = 'PENDING';
-                            n.mentor_analysis_status = 'PENDING';
-                        }
-                    });
-                });
-            });
+            userProfiles.forEach(migrateProfileNodesToAnalysisV2);
         } catch (e) {
             userProfiles = [...DEFAULT_PROFILES];
         }
@@ -5236,7 +5281,7 @@ function clockTickHandler() {
 }
 
 function onMoveExecutedClockTick(previousTurnColor) {
-    if (!gameSettings.enableClocks) return;
+    if (!gameSettings.enableClocks || !isGameActive) return;
 
     const config = getPlayerTimeControlConfig(previousTurnColor);
     const incMs = (config.increment || 0) * 1000;
@@ -7120,6 +7165,7 @@ async function seedQaProfileData() {
 /* Enhanced Profile Analytics Suite, Left Sidebar History Browser & Live On-The-Fly Recording */
 
 let selectedHistoryNodeJson = null;
+let lastLiveEvalVal = null; // live eval of the previous recorded move (stress index only)
 let liveGameSnapshot = null;
 let activeLiveGameEvent = null;
 
@@ -7284,7 +7330,8 @@ if (btnReturnLiveInit) {
 let currentTurnStartTimestamp = Date.now();
 
 function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
-    if (!moveHistory || moveHistory.length === 0) return;
+    // Record only real play: a started game, and not while a history position is being viewed
+    if (!isGameActive || liveGameSnapshot || !moveHistory || moveHistory.length === 0) return;
     const prof = getActiveProfile();
     if (!prof) return;
     if (!prof.history) prof.history = [];
@@ -7296,32 +7343,30 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
 
     // Ensure activeLiveGameEvent is valid and exists in current profile's history
     if (!activeLiveGameEvent || !prof.history.some(e => e.id === activeLiveGameEvent.id)) {
-        const existing = prof.history.find(e => e.id && e.id.startsWith('evt_live_') && e.result === 'in_progress');
-        if (existing) {
-            activeLiveGameEvent = existing;
-        } else {
-            activeLiveGameEvent = {
-                id: `evt_live_${Date.now()}`,
-                type: 'game',
-                title: `Live Match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
-                result: 'in_progress',
-                startedAt: new Date().toISOString(),
-                endedAt: null,
-                startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-                goal: null,
-                opponent: gameSettings.blackPlayerMode === 'manual' ? 'Human' : 'Stockfish',
-                totalNodes: 0,
-                moves: []
-            };
-            prof.history.unshift(activeLiveGameEvent);
-        }
+        // Never resume some older 'in_progress' event: its moves belong to a different game
+        // (appending to it is what produced recordings with broken move chains).
+        activeLiveGameEvent = {
+            id: `evt_live_${Date.now()}`,
+            type: 'game',
+            title: `Live Match (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+            result: 'in_progress',
+            startedAt: new Date().toISOString(),
+            endedAt: null,
+            startingFen: startFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            goal: null,
+            opponent: gameSettings.blackPlayerMode === 'manual' ? 'Human' : 'Stockfish',
+            totalNodes: 0,
+            moves: []
+        };
+        prof.history.unshift(activeLiveGameEvent);
+        lastLiveEvalVal = null;
     }
 
     const moveIdx = moveHistory.length - 1;
     const moveNum = Math.floor(moveIdx / 2) + 1;
     const color = (moveIdx % 2 === 0) ? 'w' : 'b';
 
-    const parentNodeId = (activeLiveGameEvent.moves.length > 0) ? activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1].id : null;
+    const parentNodeId = lastActiveLiveNode()?.id || null;
 
     // Clock and Time Control Telemetry
     const clockRemaining = (color === 'w') ? whiteTimeMs : blackTimeMs;
@@ -7345,118 +7390,11 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
         else timeStressPts = 5;
     }
 
-    // Deliberation and position stress
-    const currVal = (typeof evalObj?.eval_val === 'number') ? evalObj.eval_val : null;
-    let prevVal = 0.0;
-    if (activeLiveGameEvent.moves.length > 0) {
-        const prevNode = activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1];
-        if (typeof prevNode.per_move_analysis?.eval_val === 'number') {
-            prevVal = prevNode.per_move_analysis.eval_val;
-        }
-    }
-
-    let evalDelta = null;
-    let winProbBefore = 50.0;
-    let winProbAfter = 50.0;
-    let winProbDelta = 0.0;
-    let classification = null;
-    let strategicSwingType = 'neutral';
-    let strategicSwingLabel = '⚖️ Balanced Move';
-    let isCriticalMoment = false;
-
-    if (currVal !== null) {
-        // Evaluate from the perspective of the side making the move
-        const evalBefore = (color === 'w') ? prevVal : -prevVal;
-        const evalAfter = (color === 'w') ? currVal : -currVal;
-        evalDelta = Math.round((evalAfter - evalBefore) * 100) / 100;
-        const cpLoss = -evalDelta * 100;
-
-        // Logistic Winning Probability Model (standard chess 400 centipawns scale)
-        winProbBefore = Math.round((1 / (1 + Math.pow(10, -evalBefore / 4.0))) * 1000) / 10;
-        winProbAfter = Math.round((1 / (1 + Math.pow(10, -evalAfter / 4.0))) * 1000) / 10;
-        winProbDelta = Math.round((winProbAfter - winProbBefore) * 10) / 10;
-
-        // Contextual Evaluation Dynamics
-        // 1. Killing Blow: Expanding an already decisive winning lead (+5.0 -> +9.0)
-        if (evalBefore >= 3.0 && evalAfter >= 4.5 && evalDelta >= 1.5) {
-            strategicSwingType = 'killing_blow';
-            strategicSwingLabel = '🔥 Killing Blow (Decisive Conversion)';
-            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
-            isCriticalMoment = true;
-        }
-        // 2. Strategic Turnaround: Reversing a deficit into a winning lead (-2.0 -> +2.0)
-        else if (evalBefore <= -0.8 && evalAfter >= 0.8) {
-            strategicSwingType = 'game_turnaround';
-            strategicSwingLabel = '🔄 Strategic Turnaround (Deficit to Winning)';
-            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
-            isCriticalMoment = true;
-        }
-        // 3. Tenacious Save / Stall: Fighting back or saving material in a lost position (-9.0 -> -5.0)
-        else if (evalBefore <= -4.0 && evalDelta >= 2.0 && evalAfter <= -1.5) {
-            strategicSwingType = 'tenacious_save';
-            strategicSwingLabel = '🛡️ Tenacious Save / Stall (Fighting Defense)';
-            classification = (cpLoss <= -150) ? 'Brilliant' : 'Best';
-            isCriticalMoment = true;
-        }
-        // 4. Equalizing Strike: Neutralizing an opponent's edge (-1.8 -> 0.0)
-        else if (evalBefore <= -1.0 && Math.abs(evalAfter) <= 0.4 && evalDelta >= 0.8) {
-            strategicSwingType = 'equalization';
-            strategicSwingLabel = '⚖️ Equalizing Strike (Neutralized Deficit)';
-            classification = 'Best';
-        }
-        // 5. Catastrophic Throw: Throwing away a decisive lead (+3.0 -> -2.0)
-        else if (evalBefore >= 1.5 && evalAfter <= -1.0) {
-            strategicSwingType = 'critical_throw';
-            strategicSwingLabel = '💥 Catastrophic Throw (Lead Collapsed to Loss)';
-            classification = 'Blunder';
-            isCriticalMoment = true;
-        }
-        // 6. Missed Opportunity: Failing to convert a winning position or capitalizing on an error (+3.5 -> +0.2)
-        else if (evalBefore >= 2.0 && evalAfter < 1.0 && evalDelta <= -1.5) {
-            strategicSwingType = 'missed_opportunity';
-            strategicSwingLabel = '⚠️ Missed Opportunity (Winning Advantage Lost)';
-            classification = 'Missed Opportunity';
-            isCriticalMoment = true;
-        }
-        // 7. Blunder in Deficit: Blundering in an already lost position (-4.0 -> -7.0)
-        else if (evalBefore <= -2.5 && evalDelta <= -2.0) {
-            strategicSwingType = 'blunder_in_deficit';
-            strategicSwingLabel = '🩸 Deepening Deficit (Blunder in Lost Position)';
-            classification = 'Blunder';
-        }
-        // 8. Standard classifications
-        else if (moveNum <= 2) {
-            classification = 'Book';
-            strategicSwingType = 'book_move';
-            strategicSwingLabel = '📖 Opening Book';
-        } else if (cpLoss <= -150) {
-            classification = 'Brilliant';
-            strategicSwingType = 'brilliant_find';
-            strategicSwingLabel = '✨ Brilliant Tactical Strike';
-            isCriticalMoment = true;
-        } else if (cpLoss <= 25) {
-            classification = 'Best';
-            strategicSwingType = 'optimal_play';
-            strategicSwingLabel = '⭐ Top Engine Move';
-        } else if (cpLoss <= 60) {
-            classification = 'Good';
-            strategicSwingType = 'solid_move';
-            strategicSwingLabel = '👍 Solid Move';
-        } else if (cpLoss <= 150) {
-            classification = 'Inaccuracy';
-            strategicSwingType = 'inaccuracy';
-            strategicSwingLabel = '🟡 Inaccuracy';
-        } else if (cpLoss <= 300) {
-            classification = 'Mistake';
-            strategicSwingType = 'mistake';
-            strategicSwingLabel = '🟠 Tactical Mistake';
-        } else {
-            classification = 'Blunder';
-            strategicSwingType = 'blunder';
-            strategicSwingLabel = '💥 Blunder';
-            isCriticalMoment = true;
-        }
-    }
+    // Position tension for the stress index: swing of the live eval since the previous recorded move.
+    // (Move quality itself is NOT judged here; that is done later by the Stockfish node analysis.)
+    const currVal = (typeof evalObj?.eval_val === 'number' && evalObj.eval_type !== 'mate') ? evalObj.eval_val : null;
+    const evalDelta = (currVal !== null && lastLiveEvalVal !== null) ? Math.round((currVal - lastLiveEvalVal) * 100) / 100 : null;
+    lastLiveEvalVal = currVal;
 
     // Stress Index calculation
     let burnStressPts = (timeSpentRatio && timeSpentRatio > 0.30) ? 25 : (timeSpentRatio && timeSpentRatio > 0.15 ? 15 : 5);
@@ -7464,36 +7402,48 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
     const stressIndex = Math.min(100, Math.max(5, timeStressPts + burnStressPts + tensionStressPts));
     const stressLevel = (stressIndex > 75) ? 'Extreme' : (stressIndex > 50 ? 'High' : (stressIndex > 25 ? 'Moderate' : 'Low'));
 
-    // Running error counts for this player
-    let runningBlunders = 0;
-    let runningMissed = 0;
-    let runningMistakes = 0;
-    let runningInaccuracies = 0;
-    let myMovesCount = 1;
+    const timeControlMetrics = {
+        game_full_time_ms: gameFullTimeMs,
+        time_control_name: timeControlName,
+        increment_ms: incrementMs,
+        clock_remaining_ms: clockRemainingMs,
+        move_duration_ms: moveDurationMs,
+        time_spent_ratio: timeSpentRatio,
+        time_pressure_flag: isTimePressure,
+        stress_index: stressIndex,
+        stress_level: stressLevel
+    };
 
-    (activeLiveGameEvent.moves || []).forEach(m => {
-        if (m.color === color) {
-            myMovesCount++;
-            const c = m.per_move_analysis?.move_classification;
-            if (c === 'Blunder') runningBlunders++;
-            else if (c === 'Missed Opportunity') runningMissed++;
-            else if (c === 'Mistake') runningMistakes++;
-            else if (c === 'Inaccuracy') runningInaccuracies++;
-        }
-    });
-
-    if (classification === 'Blunder') runningBlunders++;
-    else if (classification === 'Missed Opportunity') runningMissed++;
-    else if (classification === 'Mistake') runningMistakes++;
-    else if (classification === 'Inaccuracy') runningInaccuracies++;
-
-    const blunderFrequency = Math.round((runningBlunders / myMovesCount) * 100) / 100;
-    const missedFrequency = Math.round((runningMissed / myMovesCount) * 100) / 100;
-    const runningAccuracyPct = Math.max(0, Math.min(100, Math.round(100 - (runningBlunders * 16 + runningMissed * 10 + runningMistakes * 6 + runningInaccuracies * 2.5) / myMovesCount)));
-
-    // Tactical flags
-    const isCheck = san.includes('+') || san.includes('#');
-    const isCapture = san.includes('x');
+    // After Undo: replaying the same move continues the same line (the taken-back node is revived);
+    // a different move turns the taken-back line into a branch.
+    const parentKey = parentNodeId || null;
+    const takenBack = activeLiveGameEvent.moves.filter(m =>
+        m.leaf_termination === 'abandoned_undo' && (m.parent_id || null) === parentKey && m.branch_id === 'mainline');
+    const replayed = takenBack.find(m => m.move_uci === uci);
+    if (replayed) {
+        replayed.leaf_termination = null;
+        replayed.time_control_metrics = timeControlMetrics;
+        saveUserProfilesToStorage();
+        renderProfileHistoryTab();
+        queueBackendProfilesSync();
+        return;
+    }
+    if (takenBack.length > 0) {
+        const usedBranches = new Set(activeLiveGameEvent.moves.map(m => m.branch_id).filter(b => b && b.startsWith('undo_attempt_')));
+        let branchNo = usedBranches.size + 1;
+        takenBack.forEach(root => {
+            const branchId = `undo_attempt_${branchNo++}`;
+            // Relabel the taken-back node and every taken-back move that followed it
+            const stack = [root];
+            while (stack.length) {
+                const n = stack.pop();
+                n.branch_id = branchId;
+                activeLiveGameEvent.moves
+                    .filter(c => c.parent_id === n.id && c.leaf_termination === 'abandoned_undo' && c.branch_id === 'mainline')
+                    .forEach(c => stack.push(c));
+            }
+        });
+    }
 
     const node = {
         id: `node_live_${Date.now()}_${moveIdx}`,
@@ -7508,59 +7458,9 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
         branch_id: 'mainline',
         leaf_termination: null,
 
-        time_control_metrics: {
-            game_full_time_ms: gameFullTimeMs,
-            time_control_name: timeControlName,
-            increment_ms: incrementMs,
-            clock_remaining_ms: clockRemainingMs,
-            move_duration_ms: moveDurationMs,
-            time_spent_ratio: timeSpentRatio,
-            time_pressure_flag: isTimePressure,
-            stress_index: stressIndex,
-            stress_level: stressLevel
-        },
+        time_control_metrics: timeControlMetrics,
 
-        per_move_analysis: {
-            stockfish_eval: evalObj?.score ?? null,
-            eval_val: currVal,
-            prev_eval_val: prevVal,
-            depth: evalObj?.depth ?? null,
-            best_move_uci: evalObj?.best_move || null,
-            best_move_san: evalObj?.best_move_san || null,
-            eval_source: evalObj?.source || (evalObj ? 'stockfish' : null),
-            eval_delta: evalDelta,
-            win_probability_before: winProbBefore,
-            win_probability_after: winProbAfter,
-            win_probability_delta: winProbDelta,
-            move_classification: classification,
-            strategic_swing_type: strategicSwingType,
-            strategic_swing_label: strategicSwingLabel,
-            is_critical_moment: isCriticalMoment,
-            is_check: isCheck,
-            is_capture: isCapture,
-            six_aspect_flags: null,
-            tactical_category: null,
-            tactical_sub_category: null
-        },
-
-        running_error_metrics: {
-            running_blunder_count: runningBlunders,
-            running_missed_opportunities_count: runningMissed,
-            running_mistake_count: runningMistakes,
-            running_inaccuracy_count: runningInaccuracies,
-            blunder_frequency: blunderFrequency,
-            missed_opportunity_frequency: missedFrequency,
-            running_accuracy_pct: runningAccuracyPct
-        },
-
-        per_sequence_analysis: {
-            time_pressure_flag: isTimePressure,
-            sequence_trend: (winProbDelta > 5) ? 'rising' : (winProbDelta < -5 ? 'declining' : 'steady'),
-            eval_swing_last_move: evalDelta
-        },
-
-        stockfish_analysis_status: evalObj ? 'ANALYZED' : 'PENDING',
-        mentor_analysis_status: 'PENDING'
+        analysis: null
     };
 
     activeLiveGameEvent.moves.push(node);
@@ -7571,19 +7471,22 @@ function recordLiveMoveToActiveEvent(san, uci, fenAfter, evalObj) {
     queueBackendProfilesSync();
 }
 
+// Last recorded move that is still on the board (not taken back with Undo)
+function lastActiveLiveNode() {
+    const moves = activeLiveGameEvent?.moves || [];
+    for (let i = moves.length - 1; i >= 0; i--) {
+        if (moves[i].leaf_termination !== 'abandoned_undo') return moves[i];
+    }
+    return null;
+}
+
 function handleLiveMoveUndo() {
-    if (activeLiveGameEvent && activeLiveGameEvent.moves.length > 0) {
-        const lastMove = activeLiveGameEvent.moves[activeLiveGameEvent.moves.length - 1];
+    const lastMove = lastActiveLiveNode();
+    if (lastMove) {
+        // Mark it taken back. It only becomes a separate branch if a different move is played instead
+        // (see recordLiveMoveToActiveEvent); replaying the same move revives it.
         lastMove.leaf_termination = 'abandoned_undo';
-        lastMove.branch_id = 'undo_attempt_1';
-        if (lastMove.per_move_analysis) {
-            lastMove.per_move_analysis.move_classification = 'Blunder';
-            lastMove.per_move_analysis.eval_delta = -1.85;
-            if (lastMove.per_move_analysis.six_aspect_flags) {
-                lastMove.per_move_analysis.six_aspect_flags.defensive_failure = true;
-                lastMove.per_move_analysis.six_aspect_flags.defensive_damage = 80;
-            }
-        }
+        lastLiveEvalVal = null;
         saveUserProfilesToStorage();
         renderProfileHistoryTab();
         queueBackendProfilesSync();
@@ -7661,193 +7564,163 @@ function getTaskLabelId(type) {
     }
 }
 
-function getMentorMoveCommentary(node) {
-    const san = node.move_san || '';
-    const cls = node.per_move_analysis?.move_classification;
-    if (cls === 'Blunder') return `Critical tactical concession on ${san}. Concedes vital space or material; calculate opponent counter-threats before executing.`;
-    if (cls === 'Missed Opportunity') return `Missed a sharp tactical advantage with ${san}. Look for forcing tactical motives and undefended pieces.`;
-    if (cls === 'Mistake') return `Sub-optimal square selection with ${san}. Favors passive positioning over active piece coordination.`;
-    if (san === 'O-O' || san === 'O-O-O') return 'Castles to secure king safety and immediately activates the rook towards central files.';
-    if (san.includes('+')) return 'Forcing check testing enemy king safety and seeking initiative disruption.';
-    if (san.includes('x')) return 'Direct material exchange relieving tension and altering the pawn structure.';
-    if (san.startsWith('N')) return 'Dynamic knight maneuver establishing pressure on key outpost squares.';
-    if (san.startsWith('B')) return 'Bishop development slicing along long diagonals to contest the center.';
-    if (san.startsWith('R')) return 'Rook activation positioning behind open or semi-open central columns.';
-    if (san.startsWith('Q')) return 'Queen centralization with multi-directional tactical scope.';
-    return 'Solid pawn development staking out central square dominance and opening diagonals.';
+// ------------------------------------------
+// Node analysis (schema v2). One copy of everything lives in node.analysis:
+//   { schema_version, context, engine, move, sequence, mentor }
+// engine/move come from real Stockfish (/api/analysis/move), sequence from
+// /api/analysis/sequence, mentor only from NotebookLM. Missing data stays null.
+// ------------------------------------------
+const NODE_ANALYSIS_SCHEMA = 2;
+const SEQUENCE_WINDOW_PLIES = 6;
+const STANDARD_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const ERROR_QUALITIES = ['Inaccuracy', 'Mistake', 'Blunder'];
+
+let MOTIF_CATALOG = {};
+fetch('/api/analysis/motifs').then(r => r.json()).then(d => { MOTIF_CATALOG = d.motifs || {}; }).catch(() => {});
+
+function motifLabel(id) {
+    return (MOTIF_CATALOG[id] && MOTIF_CATALOG[id].label) || String(id || '').replace(/_/g, ' ');
 }
 
-function getMentorConcept(node) {
-    const san = node.move_san || '';
-    const cls = node.per_move_analysis?.move_classification;
-    if (cls === 'Blunder' || cls === 'Missed Opportunity') return 'Tactical Awareness & Blunder Prevention';
-    if (san === 'O-O' || san === 'O-O-O') return 'King Safety & Castling Timing';
-    if (san.includes('+')) return 'Forcing Moves & King Harassment';
-    if (san.includes('x')) return 'Piece Exchange Dynamics';
-    if (san.startsWith('N')) return 'Knight Outposts & Closed Position Maneuvers';
-    if (san.startsWith('B')) return 'Bishop Activity & Long Diagonal Dominance';
-    if (node.move_number <= 4) return 'Classical Opening Principles & Central Space';
-    return 'Positional Harmony & Piece Coordination';
+function nodeEngine(node) { return (node && node.analysis && node.analysis.engine) || null; }
+function nodeQuality(node) { return nodeEngine(node)?.quality || null; }
+function hasEngineAnalysis(node) { return !!nodeEngine(node); }
+function hasSequenceAnalysis(node) { return !!node?.analysis?.sequence; }
+function hasMentorMoveAnalysis(node) { return !!node?.analysis?.mentor?.move_comment; }
+function hasMentorSeqAnalysis(node) { return !!node?.analysis?.mentor?.sequence_comment; }
+
+function findEventForNode(node) {
+    const prof = getActiveProfile();
+    return (prof?.history || []).find(e => (e.moves || []).some(m => m.id === node.id)) || null;
 }
 
-function getMentorDrill(node) {
-    const san = node.move_san || '';
-    const cls = node.per_move_analysis?.move_classification;
-    if (cls === 'Blunder') return 'Defensive Vision: Defending Hanging Pieces';
-    if (cls === 'Missed Opportunity') return 'Sharp Tactical Combinations: Pins & Forks';
-    if (san.startsWith('N')) return 'Knight Outposts in the Closed Sicilian';
-    if (san.startsWith('B')) return 'Bishop Pairs & Diagonal Dominance';
-    return 'Italian Game & Central Space Control Drills';
-}
-
-function getMentorSeqNarrative(node, ev) {
-    const moveNum = node.move_number || 1;
-    if (moveNum <= 6) return 'Opening sequence emphasizes harmonious minor piece mobilization and early central square contestation.';
-    if (moveNum <= 18) return 'Middlegame sequence balances tactical tension with structural piece maneuvering along central files.';
-    return 'Late sequence transitions into converted positional advantage with focused king activity.';
-}
-
-function getMentorPattern(node) {
-    const san = node.move_san || '';
-    if (san.includes('x')) return 'Liquidation into favorable piece coordination';
-    if (san.includes('+')) return 'Continuous tempo generation via forcing checks';
-    return 'Classical harmonic development';
-}
-
-function getMentorStrategicAdvice(node) {
-    return 'Maintain tension in contested sectors and prioritize active king placement into endgame transitions.';
-}
-
-function computeAnalysisPayloadForNode(taskType, node, ev, index) {
-    if (taskType === 'sf_move') {
-        const moveNum = node.move_number || 1;
-        const san = node.move_san || '';
-        const isCheck = san.includes('+') || san.includes('#');
-        const isCapture = san.includes('x');
-
-        let evalVal = 0.25;
-        let prevVal = 0.0;
-        if (node.per_move_analysis && typeof node.per_move_analysis.eval_val === 'number') {
-            evalVal = node.per_move_analysis.eval_val;
-            prevVal = node.per_move_analysis.prev_eval_val ?? 0.0;
-        } else {
-            const isWhite = node.color === 'w';
-            const baseDir = isWhite ? 1 : -1;
-            const variance = ((index % 7) - 3) * 0.12;
-            evalVal = Math.round((0.20 * baseDir + variance) * 100) / 100;
-            prevVal = Math.round((evalVal - (variance * 0.5)) * 100) / 100;
-        }
-
-        const evalDelta = Math.round((evalVal - prevVal) * 100) / 100;
-        const winProbBefore = Math.round((100 / (1 + Math.exp(-0.00368 * (prevVal * 100)))) * 10) / 10;
-        const winProbAfter = Math.round((100 / (1 + Math.exp(-0.00368 * (evalVal * 100)))) * 10) / 10;
-        const winProbDelta = Math.round((winProbAfter - winProbBefore) * 10) / 10;
-
-        let classification = 'Good';
-        let swingType = 'solid_move';
-        let swingLabel = '👍 Solid Move';
-        let isCritical = false;
-
-        if (moveNum <= 2) {
-            classification = 'Book';
-            swingType = 'book_move';
-            swingLabel = '📖 Opening Book';
-        } else if (evalDelta <= -2.0) {
-            classification = 'Blunder';
-            swingType = 'blunder';
-            swingLabel = '💥 Blunder';
-            isCritical = true;
-        } else if (evalDelta <= -1.0) {
-            classification = 'Mistake';
-            swingType = 'mistake';
-            swingLabel = '🟠 Tactical Mistake';
-        } else if (evalDelta <= -0.45) {
-            classification = 'Inaccuracy';
-            swingType = 'inaccuracy';
-            swingLabel = '🟡 Inaccuracy';
-        } else if (prevVal <= -1.5 && evalVal >= 0.2) {
-            classification = 'Best';
-            swingType = 'game_turnaround';
-            swingLabel = '🔄 Decisive Game Turnaround';
-            isCritical = true;
-        } else if (evalDelta >= 2.0 && evalVal >= 3.5) {
-            classification = 'Brilliant';
-            swingType = 'killing_blow';
-            swingLabel = '⚔️ Brilliant Killing Blow';
-            isCritical = true;
-        } else if (prevVal <= -3.5 && evalVal >= -1.0) {
-            classification = 'Best';
-            swingType = 'tenacious_save';
-            swingLabel = '🛡️ Tenacious Save';
-            isCritical = true;
-        } else if (evalDelta >= 0.25) {
-            classification = 'Best';
-            swingType = 'optimal_play';
-            swingLabel = '⭐ Top Engine Move';
-        }
-
-        const evalStr = evalVal >= 0 ? `+${evalVal.toFixed(2)}` : `${evalVal.toFixed(2)}`;
-
-        return {
-            per_move_analysis: {
-                stockfish_eval: evalStr,
-                eval_val: evalVal,
-                prev_eval_val: prevVal,
-                depth: 12,
-                best_move_uci: node.move_uci || null,
-                best_move_san: node.move_san || null,
-                eval_source: 'local_stockfish',
-                eval_delta: evalDelta,
-                win_probability_before: winProbBefore,
-                win_probability_after: winProbAfter,
-                win_probability_delta: winProbDelta,
-                move_classification: classification,
-                strategic_swing_type: swingType,
-                strategic_swing_label: swingLabel,
-                is_critical_moment: isCritical,
-                is_check: isCheck,
-                is_capture: isCapture,
-                six_aspect_flags: null,
-                tactical_category: null,
-                tactical_sub_category: null
-            },
-            stockfish_analysis_status: 'ANALYZED'
-        };
-    } else if (taskType === 'sf_seq') {
-        const evalDelta = node.per_move_analysis?.eval_delta ?? 0;
-        const trend = (evalDelta > 0.4) ? 'rising' : (evalDelta < -0.4 ? 'declining' : 'steady');
-        return {
-            per_sequence_analysis: {
-                time_pressure_flag: !!node.time_control_metrics?.time_pressure_flag,
-                sequence_trend: trend,
-                eval_swing_last_move: Math.round(evalDelta * 100) / 100,
-                sequence_momentum: evalDelta > 0 ? 'positive' : (evalDelta < 0 ? 'negative' : 'neutral'),
-                critical_path_flag: !!node.per_move_analysis?.is_critical_moment
-            }
-        };
-    } else if (taskType === 'mentor_move') {
-        return {
-            mentor_move_analysis: {
-                mentor_evaluation: getMentorMoveCommentary(node),
-                pedagogical_concept: getMentorConcept(node),
-                recommended_drill: getMentorDrill(node),
-                status: 'ANALYZED',
-                analyzed_at: new Date().toISOString()
-            },
-            mentor_analysis_status: 'ANALYZED'
-        };
-    } else if (taskType === 'mentor_seq') {
-        return {
-            mentor_sequence_analysis: {
-                sequence_narrative: getMentorSeqNarrative(node, ev),
-                pattern_recognition: getMentorPattern(node),
-                strategic_advice: getMentorStrategicAdvice(node),
-                status: 'ANALYZED',
-                analyzed_at: new Date().toISOString()
-            }
-        };
+// Oldest-first chain of nodes from the recording root to `node`, following parent_id.
+function getNodeAncestry(ev, node) {
+    const byId = new Map((ev.moves || []).map(m => [m.id, m]));
+    const chain = [node];
+    const seen = new Set([node.id]);
+    let cur = node;
+    while (cur.parent_id && byId.has(cur.parent_id) && !seen.has(cur.parent_id)) {
+        cur = byId.get(cur.parent_id);
+        seen.add(cur.id);
+        chain.unshift(cur);
     }
-    return {};
+    return chain;
+}
+
+async function postJson(url, body) {
+    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let data = null;
+    try { data = await resp.json(); } catch (e) { data = null; }
+    if (!resp.ok) throw new Error((data && (data.detail || data.error)) || `HTTP ${resp.status}`);
+    return data || {};
+}
+
+// Older recordings can have wrong parent_id links (undo bug). Rebuild them once per event
+// from the positions themselves (backend matches parent FEN + move = child FEN).
+const repairedChainEvents = new Set();
+async function repairEventChain(ev) {
+    if (repairedChainEvents.has(ev.id)) return false;
+    repairedChainEvents.add(ev.id);
+    const data = await postJson('/api/analysis/repair-chain', {
+        starting_fen: ev.startingFen || STANDARD_START_FEN,
+        nodes: (ev.moves || []).map(n => ({ id: n.id, fen: n.fen, move_uci: n.move_uci, parent_id: n.parent_id }))
+    });
+    let changed = false;
+    (ev.moves || []).forEach(n => {
+        if (n.id in data.parents && data.parents[n.id] !== n.parent_id) {
+            n.parent_id = data.parents[n.id];
+            changed = true;
+        }
+    });
+    if (changed) console.log(`[Analysis] Repaired parent links in "${ev.title}" (${(data.unresolved || []).length} unresolved)`);
+    return changed;
+}
+
+async function runEngineAnalysisForNode(ev, node) {
+    const request = () => {
+        const chain = getNodeAncestry(ev, node);
+        return postJson('/api/analysis/move', {
+            start_fen: ev.startingFen || STANDARD_START_FEN,
+            uci_path: chain.map(n => n.move_uci),
+            move_number: node.move_number || 1,
+            expected_fen_after: node.fen || null,
+            depth: 14
+        });
+    };
+    let data;
+    try {
+        data = await request();
+    } catch (err) {
+        if (!/chain is broken|inconsistent/i.test(err.message) || !(await repairEventChain(ev))) throw err;
+        data = await request();
+    }
+    if (!data.success) throw new Error(data.error || 'Engine analysis failed');
+    // A new engine run invalidates the sequence and mentor layers built on the old one
+    node.analysis = data.analysis;
+    if (!node.fen) node.fen = data.analysis.context.fen_after;
+    delete node.analysis_error;
+    return node.analysis;
+}
+
+async function runSequenceAnalysisForNode(ev, node) {
+    const window = getNodeAncestry(ev, node).slice(-SEQUENCE_WINDOW_PLIES);
+    for (const n of window) {
+        if (!hasEngineAnalysis(n)) await runEngineAnalysisForNode(ev, n);
+    }
+    const data = await postJson('/api/analysis/sequence', {
+        color: node.color,
+        plies: window.map(n => ({ context: n.analysis.context, engine: n.analysis.engine, move: n.analysis.move }))
+    });
+    node.analysis.sequence = data.sequence;
+    return node.analysis.sequence;
+}
+
+function gameErrorCountsBefore(ev, node) {
+    const counts = { Inaccuracy: 0, Mistake: 0, Blunder: 0 };
+    getNodeAncestry(ev, node).slice(0, -1).forEach(n => {
+        const q = nodeQuality(n);
+        if (n.color === node.color && counts[q] !== undefined) counts[q]++;
+    });
+    return counts;
+}
+
+// Mentor needs the engine facts; run Stockfish (move + sequence) first when missing.
+async function runMentorAnalysisForNode(ev, node, analysisType = 'all') {
+    if (!hasEngineAnalysis(node)) await runEngineAnalysisForNode(ev, node);
+    if (!hasSequenceAnalysis(node)) await runSequenceAnalysisForNode(ev, node);
+    const data = await postJson('/api/mentor/node-analysis', {
+        node_id: node.id,
+        analysis: node.analysis,
+        time_control_metrics: node.time_control_metrics || null,
+        game_errors: gameErrorCountsBefore(ev, node),
+        analysis_type: analysisType
+    });
+    if (!data.success || !data.mentor) {
+        const err = new Error(data.error || 'Mentor analysis failed');
+        err.mentorUnavailable = /not connected/i.test(data.error || '');
+        throw err;
+    }
+    const merged = Object.assign({}, node.analysis.mentor || {});
+    Object.entries(data.mentor).forEach(([k, v]) => { if (v !== null && v !== undefined) merged[k] = v; });
+    node.analysis.mentor = merged;
+    return merged;
+}
+
+function nodeNeedsTask(node, taskType) {
+    switch (taskType) {
+        case 'sf_move': return !hasEngineAnalysis(node);
+        case 'sf_seq': return !hasSequenceAnalysis(node);
+        case 'mentor_move': return !hasMentorMoveAnalysis(node);
+        case 'mentor_seq': return !hasMentorSeqAnalysis(node);
+    }
+    return false;
+}
+
+async function runNodeTask(ev, node, taskType) {
+    if (taskType === 'sf_move') return runEngineAnalysisForNode(ev, node);
+    if (taskType === 'sf_seq') return runSequenceAnalysisForNode(ev, node);
+    return runMentorAnalysisForNode(ev, node, taskType === 'mentor_seq' ? 'sequence' : 'move');
 }
 
 async function runAtomicAnalysisBatch(taskType) {
@@ -7855,226 +7728,226 @@ async function runAtomicAnalysisBatch(taskType) {
     if (!prof || !prof.history) return;
 
     if (activeHistoryAnalysisTask && activeHistoryAnalysisTask.type === taskType) {
-        if (confirm('⚠️ Analysis is currently in progress. Cancel and discard all staged progress?')) {
+        if (confirm('⚠️ Analysis is currently in progress. Stop process? (All nodes processed so far are already saved).')) {
             cancelActiveHistoryAnalysis();
         }
         return;
     }
-
     if (activeHistoryAnalysisTask) {
         alert('Another analysis process is currently running. Please wait for it to complete or cancel it.');
         return;
     }
 
+    // Game order, move order: ancestors are analysed before their children (engine cache hits)
     const targetNodes = [];
-    prof.history.forEach(ev => {
-        (ev.moves || []).forEach(node => {
-            if (taskType === 'sf_move') {
-                const missing = !node.per_move_analysis || node.stockfish_analysis_status !== 'ANALYZED' || node.per_move_analysis.stockfish_eval == null;
-                if (missing) targetNodes.push({ event: ev, node });
-            } else if (taskType === 'sf_seq') {
-                if (!node.per_sequence_analysis) targetNodes.push({ event: ev, node });
-            } else if (taskType === 'mentor_move') {
-                const missing = !node.mentor_move_analysis && node.mentor_analysis_status !== 'ANALYZED';
-                if (missing) targetNodes.push({ event: ev, node });
-            } else if (taskType === 'mentor_seq') {
-                if (!node.mentor_sequence_analysis) targetNodes.push({ event: ev, node });
-            }
-        });
-    });
-
+    prof.history.forEach(ev => (ev.moves || []).forEach(node => {
+        if (nodeNeedsTask(node, taskType)) targetNodes.push({ event: ev, node });
+    }));
     if (targetNodes.length === 0) {
         alert(`✅ All nodes already have ${getTaskName(taskType)} completed!`);
         return;
     }
 
-    const btnId = getTaskBtnId(taskType);
-    const progId = getTaskProgId(taskType);
-    const labelId = getTaskLabelId(taskType);
-
-    const btn = document.getElementById(btnId);
-    const progOverlay = document.getElementById(progId);
-    const labelEl = document.getElementById(labelId);
-
-    const originalLabel = labelEl ? labelEl.textContent : '';
+    const btn = document.getElementById(getTaskBtnId(taskType));
+    const progOverlay = document.getElementById(getTaskProgId(taskType));
+    const labelEl = document.getElementById(getTaskLabelId(taskType));
     const totalCount = targetNodes.length;
-
-    activeHistoryAnalysisTask = {
-        type: taskType,
-        aborted: false,
-        btnId
-    };
-
+    activeHistoryAnalysisTask = { type: taskType, aborted: false, btnId: getTaskBtnId(taskType) };
     if (btn) {
         btn.classList.add('is-running');
-        btn.title = 'Click to Cancel (Zero changes will be committed)';
+        btn.title = 'Click to Stop / Pause (Completed nodes are saved)';
     }
 
-    // ATOMIC STAGING CONTAINER: NOTHING touches prof.history until 100% complete
-    const stagedUpdates = new Map();
+    let committedCount = 0;
+    let failedCount = 0;
+    let stopReason = null;
 
-    try {
-        const batchChunkSize = (taskType.startsWith('mentor')) ? 20 : 12;
-        for (let i = 0; i < totalCount; i += batchChunkSize) {
-            if (activeHistoryAnalysisTask.aborted) {
-                throw new Error('USER_ABORTED');
-            }
-
-            const chunk = targetNodes.slice(i, i + batchChunkSize);
-
-            if (taskType.startsWith('mentor')) {
-                // Send state/FEN/sequence/times/blunders to mentor endpoint
-                const reqPayload = chunk.map(item => {
-                    const node = item.node;
-                    const ev = item.event;
-                    const seqMoves = (ev.moves || [])
-                        .filter(m => (m.branch_id === node.branch_id || m.branch_id === 'mainline') && m.move_number <= node.move_number)
-                        .map(m => m.move_san);
-                    return {
-                        node_id: node.id,
-                        fen: node.fen || '',
-                        move_number: node.move_number || 1,
-                        color: node.color || 'w',
-                        move_san: node.move_san || '',
-                        move_uci: node.move_uci || null,
-                        sequence_moves: seqMoves,
-                        time_control_metrics: node.time_control_metrics || null,
-                        running_error_metrics: node.running_error_metrics || null,
-                        eval_context: node.per_move_analysis || null,
-                        analysis_type: taskType
-                    };
-                });
-
-                try {
-                    const resp = await fetch('/api/mentor/batch-node-analysis', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nodes: reqPayload })
-                    });
-                    const data = await resp.json();
-                    if (data && data.results) {
-                        data.results.forEach(res => {
-                            if (taskType === 'mentor_move') {
-                                stagedUpdates.set(res.node_id, {
-                                    mentor_move_analysis: {
-                                        mentor_evaluation: res.analysis.mentor_evaluation,
-                                        pedagogical_concept: res.analysis.pedagogical_concept,
-                                        time_stress_assessment: res.analysis.time_stress_assessment,
-                                        error_frequency_insight: res.analysis.error_frequency_insight,
-                                        recommended_drill: res.analysis.recommended_drill,
-                                        actionable_guideline: res.analysis.actionable_guideline,
-                                        status: 'ANALYZED',
-                                        source: res.provider || 'mentor',
-                                        analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
-                                    },
-                                    mentor_analysis_status: 'ANALYZED'
-                                });
-                            } else if (taskType === 'mentor_seq') {
-                                stagedUpdates.set(res.node_id, {
-                                    mentor_sequence_analysis: {
-                                        sequence_narrative: res.analysis.sequence_narrative,
-                                        sequence_trend: res.analysis.sequence_trend,
-                                        pattern_recognition: res.analysis.pattern_recognition,
-                                        time_pressure_impact: res.analysis.time_stress_assessment,
-                                        error_trend_analysis: res.analysis.error_frequency_insight,
-                                        strategic_advice: res.analysis.strategic_advice,
-                                        status: 'ANALYZED',
-                                        source: res.provider || 'mentor',
-                                        analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
-                                    }
-                                });
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('[Mentor Batch] API fallback for chunk:', e);
-                    chunk.forEach((item, idx) => {
-                        const payload = computeAnalysisPayloadForNode(taskType, item.node, item.event, i + idx);
-                        stagedUpdates.set(item.node.id, payload);
-                    });
-                }
-            } else {
-                chunk.forEach((item, idx) => {
-                    const payload = computeAnalysisPayloadForNode(taskType, item.node, item.event, i + idx);
-                    stagedUpdates.set(item.node.id, payload);
-                });
-            }
-
-            const processed = Math.min(totalCount, i + chunk.length);
-            const pct = Math.round((processed / totalCount) * 100);
-            if (progOverlay) progOverlay.style.width = `${pct}%`;
-            if (labelEl) {
-                const shortName = getTaskShortName(taskType);
-                labelEl.textContent = `⏳ ${shortName}: ${processed}/${totalCount} (${pct}%)`;
-            }
-
-            await new Promise(r => setTimeout(r, 16));
+    for (let i = 0; i < totalCount; i++) {
+        if (activeHistoryAnalysisTask.aborted) break;
+        const { event: ev, node } = targetNodes[i];
+        if (!nodeNeedsTask(node, taskType)) continue; // filled in as a dependency of an earlier node
+        try {
+            await runNodeTask(ev, node, taskType);
+            committedCount++;
+        } catch (err) {
+            failedCount++;
+            console.warn(`[Analysis] ${getTaskShortName(taskType)} failed for node ${node.id}:`, err.message);
+            if (err.mentorUnavailable) { stopReason = err.message; break; }
+            if (/engine available/i.test(err.message)) { stopReason = err.message; break; }
+            if (taskType.startsWith('sf')) node.analysis_error = err.message;
         }
 
-        // ==========================================
-        // 🔒 COMMIT PHASE: ONLY REACHED IF 100% DONE
-        // ==========================================
-        if (activeHistoryAnalysisTask.aborted) {
-            throw new Error('USER_ABORTED');
-        }
-
-        console.log(`[Atomic Analysis] Committing ${stagedUpdates.size} staged updates for ${taskType}...`);
-
-        prof.history.forEach(ev => {
-            (ev.moves || []).forEach(node => {
-                if (stagedUpdates.has(node.id)) {
-                    const payload = stagedUpdates.get(node.id);
-                    Object.assign(node, payload);
-                }
-            });
-        });
-
+        // Per-node commit
         saveUserProfilesToStorage();
         queueBackendProfilesSync();
-
-        if (progOverlay) progOverlay.style.width = '100%';
-        if (btn) {
-            btn.classList.remove('is-running');
-            btn.classList.add('is-complete');
-        }
-        if (labelEl) {
-            labelEl.textContent = `✅ ${getTaskShortName(taskType)} Complete!`;
-        }
-
-        activeHistoryAnalysisTask = null;
-
-        setTimeout(() => {
-            if (btn) {
-                btn.classList.remove('is-complete');
-            }
-            if (progOverlay) {
-                progOverlay.style.width = '0%';
-            }
-            renderProfileHistoryTab();
-        }, 1200);
-
-    } catch (err) {
-        stagedUpdates.clear();
-        console.warn(`[Atomic Analysis] Process stopped or interrupted (${err.message}). Zero changes were committed.`);
-
-        if (progOverlay) progOverlay.style.width = '0%';
-        if (btn) {
-            btn.classList.remove('is-running');
-            btn.title = `Run ${getTaskName(taskType)}`;
-        }
-        if (labelEl) {
-            labelEl.textContent = originalLabel;
-        }
-
-        activeHistoryAnalysisTask = null;
-
-        if (err.message === 'USER_ABORTED') {
-            alert('⚠️ Analysis cancelled. Zero nodes were committed; historic DAG remains unmodified.');
-        } else {
-            console.error('[Atomic Analysis] Error during analysis:', err);
-            alert(`⚠️ Analysis halted: ${err.message}. No changes were committed.`);
-        }
+        const done = committedCount + failedCount;
+        const pct = Math.round((done / totalCount) * 100);
+        if (progOverlay) progOverlay.style.width = `${pct}%`;
+        if (labelEl) labelEl.textContent = `⏳ ${getTaskShortName(taskType)}: ${done}/${totalCount} (${pct}%) • ${committedCount} saved`;
+        await new Promise(r => setTimeout(r, 5));
     }
+
+    saveUserProfilesToStorage();
+    queueBackendProfilesSync();
+    if (btn) {
+        btn.classList.remove('is-running');
+        btn.title = `Run ${getTaskName(taskType)}`;
+    }
+    if (labelEl) {
+        labelEl.textContent = stopReason
+            ? `⏹️ ${getTaskShortName(taskType)} stopped`
+            : `✅ ${getTaskShortName(taskType)}: ${committedCount} saved${failedCount ? `, ${failedCount} failed` : ''}`;
+    }
+    activeHistoryAnalysisTask = null;
+    if (stopReason) alert(`⚠️ ${getTaskName(taskType)} stopped: ${stopReason}`);
+    else if (failedCount) showGameToast(`⚠️ ${failedCount} node(s) could not be analysed (broken move chain). See node "analysis_error".`, 6000);
+
+    setTimeout(() => {
+        renderProfileHistoryTab();
+        if (document.getElementById('enhanced-analytics-modal')?.classList.contains('active')) {
+            openEnhancedAnalyticsModal();
+        }
+    }, 600);
+}
+
+// ------------------------------------------
+// Per-move context menu (right-click a move chip) and analysis summary popup
+// ------------------------------------------
+function closeMoveContextMenu() {
+    document.getElementById('move-chip-context-menu')?.remove();
+}
+document.addEventListener('click', closeMoveContextMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMoveContextMenu(); closeNodeAnalysisPopup(); } });
+
+function openMoveContextMenu(e, node, ev) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMoveContextMenu();
+    const menu = document.createElement('div');
+    menu.id = 'move-chip-context-menu';
+    menu.style.cssText = 'position:fixed; z-index:10000; background:#18181b; border:1px solid #3f3f46; border-radius:6px; padding:4px; box-shadow:0 6px 18px rgba(0,0,0,0.6); min-width:190px; font-size:12px;';
+    const items = [
+        { label: '📈 Stockfish Analysis', run: () => analyzeSingleNode(ev, node, 'stockfish') },
+        { label: '🧠 Mentor Analysis', run: () => analyzeSingleNode(ev, node, 'mentor') },
+    ];
+    if (node.analysis) items.push({ label: '🔍 Show Analysis', run: () => openNodeAnalysisPopup(node) });
+    items.forEach(it => {
+        const b = document.createElement('button');
+        b.textContent = it.label;
+        b.style.cssText = 'display:block; width:100%; text-align:left; background:none; border:none; color:#e4e4e7; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;';
+        b.onmouseenter = () => { b.style.background = '#27272a'; };
+        b.onmouseleave = () => { b.style.background = 'none'; };
+        b.onclick = (clickEv) => { clickEv.stopPropagation(); closeMoveContextMenu(); it.run(); };
+        menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(e.clientX, window.innerWidth - rect.width - 8)}px`;
+    menu.style.top = `${Math.min(e.clientY, window.innerHeight - rect.height - 8)}px`;
+}
+
+async function analyzeSingleNode(ev, node, kind) {
+    ev = ev || findEventForNode(node);
+    if (!ev) return;
+    showGameToast(kind === 'mentor' ? `🧠 Asking the mentor about ${node.move_san}...` : `📈 Stockfish is analysing ${node.move_san}...`, 2500);
+    try {
+        if (kind === 'mentor') {
+            await runMentorAnalysisForNode(ev, node, 'all');
+        } else {
+            await runEngineAnalysisForNode(ev, node);
+            await runSequenceAnalysisForNode(ev, node);
+        }
+    } catch (err) {
+        if (kind === 'stockfish') node.analysis_error = err.message;
+        showGameToast(`⚠️ ${err.message}`, 6000);
+    }
+    saveUserProfilesToStorage();
+    queueBackendProfilesSync();
+    renderProfileHistoryTab();
+    refreshQaJsonViewer(node);
+    if (node.analysis) openNodeAnalysisPopup(node);
+}
+
+function refreshQaJsonViewer(node) {
+    if (selectedHistoryNodeJson && selectedHistoryNodeJson.id === node.id) {
+        const jsonViewer = document.getElementById('qa-pane-json-viewer');
+        if (jsonViewer) jsonViewer.textContent = JSON.stringify(node, null, 2);
+    }
+}
+
+function closeNodeAnalysisPopup() {
+    document.getElementById('node-analysis-popup')?.remove();
+}
+
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatEval(pawns, mate) {
+    if (mate !== null && mate !== undefined) return `M${mate}`;
+    if (pawns === null || pawns === undefined) return '—';
+    return `${pawns > 0 ? '+' : ''}${pawns.toFixed(2)}`;
+}
+
+function openNodeAnalysisPopup(node) {
+    closeNodeAnalysisPopup();
+    const a = node.analysis || {};
+    const eng = a.engine;
+    const mv = a.move;
+    const seq = a.sequence;
+    const mentor = a.mentor;
+    const qColor = { Blunder: '#ef4444', Mistake: '#f97316', Inaccuracy: '#eab308', Best: '#22c55e', Good: '#86efac', Book: '#a5b4fc' };
+    const motifList = (list) => (list && list.length)
+        ? list.map(m => `<li><strong>${escapeHtml(motifLabel(m.id))}</strong> <span style="color:#a1a1aa;">${m.score}/100${m.status ? ' · ' + m.status : ''}</span><br><span style="color:#d4d4d8;">${escapeHtml(m.detail || '')}</span></li>`).join('')
+        : '<li style="color:#71717a;">none</li>';
+    const aspectRows = mv ? Object.entries(mv.aspects).map(([k, v]) => `
+        <div style="display:flex; align-items:center; gap:6px; margin:2px 0;">
+            <span style="width:150px; color:#a1a1aa;">${escapeHtml(k.replace(/_/g, ' '))}</span>
+            <div style="flex:1; height:6px; background:#27272a; border-radius:3px;"><div style="width:${v ?? 0}%; height:100%; background:${k === 'opponent_score' ? '#ef4444' : '#3b82f6'}; border-radius:3px;"></div></div>
+            <span style="width:28px; text-align:right;">${v ?? '—'}</span>
+        </div>`).join('') : '';
+
+    const popup = document.createElement('div');
+    popup.id = 'node-analysis-popup';
+    popup.style.cssText = 'position:fixed; z-index:10001; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; padding:16px;';
+    popup.innerHTML = `
+        <div style="background:#18181b; border:1px solid #3f3f46; border-radius:10px; width:min(560px, 100%); max-height:88vh; overflow:auto; padding:14px 16px; color:#e4e4e7; font-size:12px; line-height:1.45;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <strong style="font-size:14px;">${node.move_number}.${node.color === 'b' ? '..' : ''} ${escapeHtml(node.move_san)}</strong>
+                <button id="node-analysis-popup-close" style="background:none; border:none; color:#a1a1aa; font-size:16px; cursor:pointer;">✕</button>
+            </div>
+            ${node.analysis_error ? `<div style="color:#fca5a5; margin-bottom:8px;">⚠️ ${escapeHtml(node.analysis_error)}</div>` : ''}
+            ${eng ? `
+                <div style="margin-bottom:8px;">
+                    <span style="font-weight:700; color:${qColor[eng.quality] || '#fff'};">${escapeHtml(eng.quality)}</span>
+                    ${eng.missed_opportunity ? '<span style="color:#f59e0b;"> · missed opportunity</span>' : ''}
+                    · Eval ${formatEval(eng.eval_before, eng.mate_before)} → ${formatEval(eng.eval_after, eng.mate_after)}
+                    · CP loss ${eng.cp_loss}
+                    ${eng.played_is_best ? '· best move' : `· best was <strong>${escapeHtml(eng.best_move_san || '?')}</strong>`}
+                    <div style="color:#71717a;">${escapeHtml(a.context?.phase || '')}${a.context?.opening?.name ? ' · ' + escapeHtml(a.context.opening.name) : ''} · ${escapeHtml(eng.source || '')} d${eng.depth ?? '?'}</div>
+                </div>` : '<div style="color:#71717a; margin-bottom:8px;">No Stockfish analysis yet.</div>'}
+            ${mv ? `
+                <div style="margin-bottom:6px;">Category: <strong>${escapeHtml(mv.category)}</strong>${mv.primary_motif ? ` · Primary: <strong>${escapeHtml(motifLabel(mv.primary_motif.id))}</strong> (${mv.primary_motif.side})` : ''}</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;">
+                    <div><div style="color:#4ade80; font-weight:700;">Created by this move</div><ul style="margin:4px 0; padding-left:16px;">${motifList(mv.motifs_for)}</ul></div>
+                    <div><div style="color:#f87171; font-weight:700;">Opponent chances</div><ul style="margin:4px 0; padding-left:16px;">${motifList(mv.motifs_against)}</ul></div>
+                </div>
+                <div style="margin-bottom:8px;">${aspectRows}</div>` : ''}
+            ${seq ? `<div style="margin-bottom:8px; color:#d4d4d8;">Last ${seq.window_plies} plies: ${escapeHtml((seq.moves || []).join(' '))} · trend <strong>${escapeHtml(seq.eval_trend || '—')}</strong>${seq.eval_change !== null && seq.eval_change !== undefined ? ` (${seq.eval_change > 0 ? '+' : ''}${seq.eval_change})` : ''}</div>` : ''}
+            <div style="border-top:1px solid #27272a; padding-top:8px;">
+                <div style="font-weight:700; color:#a5b4fc; margin-bottom:4px;">🧠 Mentor</div>
+                ${mentor ? `
+                    ${mentor.move_comment ? `<p style="margin:0 0 6px;">${escapeHtml(mentor.move_comment)}</p>` : ''}
+                    ${mentor.sequence_comment ? `<p style="margin:0 0 6px; color:#d4d4d8;">${escapeHtml(mentor.sequence_comment)}</p>` : ''}
+                    ${mentor.key_idea ? `<p style="margin:0 0 6px;">💡 ${escapeHtml(mentor.key_idea)}</p>` : ''}
+                    ${mentor.drill ? `<p style="margin:0 0 6px;">🎯 Drill: ${escapeHtml(mentor.drill)}</p>` : ''}
+                    <div style="color:#71717a;">${escapeHtml(mentor.source || '')}</div>`
+                : '<div style="color:#71717a;">Not analysed by the mentor yet (right-click the move → Mentor Analysis).</div>'}
+            </div>
+        </div>`;
+    popup.addEventListener('click', e => { if (e.target === popup) closeNodeAnalysisPopup(); });
+    document.body.appendChild(popup);
+    document.getElementById('node-analysis-popup-close').onclick = closeNodeAnalysisPopup;
 }
 
 // ==========================================
@@ -8105,15 +7978,10 @@ async function renderProfileHistoryTab() {
 
     history.forEach(ev => {
         (ev.moves || []).forEach(m => {
-            const hasSfMove = !!(m.per_move_analysis && (m.stockfish_analysis_status === 'ANALYZED' || m.per_move_analysis.stockfish_eval != null));
-            const hasSfSeq = !!m.per_sequence_analysis;
-            const hasMentorMove = !!(m.mentor_move_analysis || (m.mentor_analysis_status === 'ANALYZED' && m.mentor_move_analysis));
-            const hasMentorSeq = !!m.mentor_sequence_analysis;
-
-            if (!hasSfMove) missingSfMove++;
-            if (!hasSfSeq) missingSfSeq++;
-            if (!hasMentorMove) missingMentorMove++;
-            if (!hasMentorSeq) missingMentorSeq++;
+            if (nodeNeedsTask(m, 'sf_move')) missingSfMove++;
+            if (nodeNeedsTask(m, 'sf_seq')) missingSfSeq++;
+            if (nodeNeedsTask(m, 'mentor_move')) missingMentorMove++;
+            if (nodeNeedsTask(m, 'mentor_seq')) missingMentorSeq++;
         });
     });
 
@@ -8211,8 +8079,8 @@ async function renderProfileHistoryTab() {
         const icon = ev.type === 'riddle' ? '🧩' : (ev.type === 'exercise' ? '🎯' : '♟️');
 
         const moves = ev.moves || [];
-        const mainlineMoves = moves.filter(m => m.branch_id === 'mainline');
-        const undoMoves = moves.filter(m => m.branch_id && m.branch_id !== 'mainline');
+        const mainlineMoves = moves.filter(m => m.branch_id === 'mainline' && m.leaf_termination !== 'abandoned_undo');
+        const undoMoves = moves.filter(m => !mainlineMoves.includes(m));
 
         // Auto-expand the first game so move chips are immediately visible
         const isFirstOpen = (evIdx === 0);
@@ -8281,21 +8149,26 @@ async function renderProfileHistoryTab() {
         });
         chipsContainer.appendChild(mainlineRow);
 
-        // Undo branch chips
-        if (undoMoves.length > 0) {
+        // Undo branches, one group per branch (taken-back moves not yet replaced are "pending")
+        const branchGroups = new Map();
+        undoMoves.forEach(m => {
+            const key = m.branch_id === 'mainline' ? 'pending' : m.branch_id;
+            if (!branchGroups.has(key)) branchGroups.set(key, []);
+            branchGroups.get(key).push(m);
+        });
+        branchGroups.forEach((branchMoves, key) => {
             const undoGroup = document.createElement('div');
             undoGroup.className = 'history-undo-branch';
-            undoGroup.innerHTML = `<span style="font-size:10px; color:#fca5a5; font-weight:700;">↳ Attempt 1 [Undo at Move ${undoMoves[0].move_number}]:</span>`;
-            
+            const label = key === 'pending'
+                ? `↳ Taken back [from Move ${branchMoves[0].move_number}]:`
+                : `↳ ${key.replace('undo_attempt_', 'Attempt ')} [Undo at Move ${branchMoves[0].move_number}]:`;
+            undoGroup.innerHTML = `<span style="font-size:10px; color:#fca5a5; font-weight:700;">${label}</span>`;
             const undoRow = document.createElement('div');
             undoRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin-top:2px;';
-            undoMoves.forEach(m => {
-                const chip = createMoveChipElement(m, ev, true);
-                undoRow.appendChild(chip);
-            });
+            branchMoves.forEach(m => undoRow.appendChild(createMoveChipElement(m, ev, true)));
             undoGroup.appendChild(undoRow);
             chipsContainer.appendChild(undoGroup);
-        }
+        });
 
         gamesPane.appendChild(evCard);
     });
@@ -8319,34 +8192,26 @@ async function renderProfileHistoryTab() {
 function createMoveChipElement(node, event, isUndo = false) {
     const chip = document.createElement('button');
     chip.className = 'history-chip';
-    const pm = node.per_move_analysis || {};
-    const cls = pm.move_classification;
-    const swingType = pm.strategic_swing_type;
-    const swingLabel = pm.strategic_swing_label || '';
+    const eng = nodeEngine(node);
+    const cls = eng?.quality;
 
     if (cls === 'Blunder' || isUndo) {
         chip.classList.add('blunder-chip');
-    } else if (cls === 'Missed Opportunity') {
+    } else if (eng?.missed_opportunity || cls === 'Mistake') {
         chip.classList.add('missed-chip');
-    } else if (swingType === 'game_turnaround') {
-        chip.classList.add('turnaround-chip');
-    } else if (swingType === 'killing_blow') {
-        chip.classList.add('killing-chip');
-    } else if (swingType === 'tenacious_save') {
-        chip.classList.add('save-chip');
     }
 
     const stressInfo = node.time_control_metrics ? ` | Stress: ${node.time_control_metrics.stress_index}/100 (${node.time_control_metrics.stress_level})` : '';
-    const swingInfo = swingLabel ? ` | ${swingLabel}` : '';
     const clockInfo = node.time_control_metrics?.clock_remaining_ms ? ` | Clock: ${Math.round(node.time_control_metrics.clock_remaining_ms / 1000)}s` : '';
+    const evalInfo = eng ? formatEval(eng.eval_after, eng.mate_after) : 'N/A';
     chip.textContent = `${node.move_number}.${node.color === 'b' ? '..' : ''} ${node.move_san}`;
-    chip.title = `Move: ${node.move_san} | Eval: ${pm.stockfish_eval ?? 'N/A'}${swingInfo} | Class: ${cls ?? 'N/A'}${stressInfo}${clockInfo}`;
+    chip.title = `Move: ${node.move_san} | Eval: ${evalInfo} | Class: ${cls ?? 'N/A'}${stressInfo}${clockInfo} | Right-click for analysis`;
 
     // Badges for missing analysis (Per-Move, Per-Sequence, Mentor-Move, Mentor-Seq)
-    const hasSfMove = !!(node.per_move_analysis && (node.stockfish_analysis_status === 'ANALYZED' || node.per_move_analysis.stockfish_eval != null));
-    const hasSfSeq = !!node.per_sequence_analysis;
-    const hasMentorMove = !!(node.mentor_move_analysis || (node.mentor_analysis_status === 'ANALYZED' && node.mentor_move_analysis));
-    const hasMentorSeq = !!node.mentor_sequence_analysis;
+    const hasSfMove = hasEngineAnalysis(node);
+    const hasSfSeq = hasSequenceAnalysis(node);
+    const hasMentorMove = hasMentorMoveAnalysis(node);
+    const hasMentorSeq = hasMentorSeqAnalysis(node);
 
     if (!hasSfMove || !hasSfSeq || !hasMentorMove || !hasMentorSeq) {
         const badgesWrap = document.createElement('span');
@@ -8382,6 +8247,8 @@ function createMoveChipElement(node, event, isUndo = false) {
         }
         chip.appendChild(badgesWrap);
     }
+
+    chip.oncontextmenu = (e) => openMoveContextMenu(e, node, event);
 
     chip.onclick = async (e) => {
         e.stopPropagation();
@@ -8439,7 +8306,7 @@ if (btnCopyNodeJson) {
     };
 }
 
-// Mentor Single Node Analysis Button binding
+// Mentor Single Node Analysis Button binding (QA pane) - same path as the right-click menu
 const btnMentorSingleNode = document.getElementById('btn-mentor-analyze-single-node');
 if (btnMentorSingleNode) {
     btnMentorSingleNode.onclick = async () => {
@@ -8447,73 +8314,10 @@ if (btnMentorSingleNode) {
             alert('Please select a move chip from the history tree first.');
             return;
         }
-        const node = selectedHistoryNodeJson;
-        const prof = getActiveProfile();
-        if (!prof || !prof.history) return;
-
-        const ev = prof.history.find(e => (e.moves || []).some(m => m.id === node.id));
-        const seqMoves = ev ? (ev.moves || [])
-            .filter(m => (m.branch_id === node.branch_id || m.branch_id === 'mainline') && m.move_number <= node.move_number)
-            .map(m => m.move_san) : [node.move_san];
-
         btnMentorSingleNode.disabled = true;
         btnMentorSingleNode.textContent = '⏳ Querying Mentor...';
-
         try {
-            const resp = await fetch('/api/mentor/node-analysis', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    node_id: node.id,
-                    fen: node.fen || '',
-                    move_number: node.move_number || 1,
-                    color: node.color || 'w',
-                    move_san: node.move_san || '',
-                    move_uci: node.move_uci || null,
-                    sequence_moves: seqMoves,
-                    time_control_metrics: node.time_control_metrics || null,
-                    running_error_metrics: node.running_error_metrics || null,
-                    eval_context: node.per_move_analysis || null
-                })
-            });
-            const res = await resp.json();
-            if (res.success && res.analysis) {
-                node.mentor_move_analysis = {
-                    mentor_evaluation: res.analysis.mentor_evaluation,
-                    pedagogical_concept: res.analysis.pedagogical_concept,
-                    time_stress_assessment: res.analysis.time_stress_assessment,
-                    error_frequency_insight: res.analysis.error_frequency_insight,
-                    recommended_drill: res.analysis.recommended_drill,
-                    actionable_guideline: res.analysis.actionable_guideline,
-                    status: 'ANALYZED',
-                    source: res.provider || 'mentor',
-                    analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
-                };
-                node.mentor_sequence_analysis = {
-                    sequence_narrative: res.analysis.sequence_narrative,
-                    sequence_trend: res.analysis.sequence_trend,
-                    pattern_recognition: res.analysis.pattern_recognition,
-                    time_pressure_impact: res.analysis.time_stress_assessment,
-                    error_trend_analysis: res.analysis.error_frequency_insight,
-                    strategic_advice: res.analysis.strategic_advice,
-                    status: 'ANALYZED',
-                    source: res.provider || 'mentor',
-                    analyzed_at: res.analysis.analyzed_at || new Date().toISOString()
-                };
-                node.mentor_analysis_status = 'ANALYZED';
-
-                saveUserProfilesToStorage();
-                queueBackendProfilesSync();
-
-                const jsonViewer = document.getElementById('qa-pane-json-viewer');
-                if (jsonViewer) jsonViewer.textContent = JSON.stringify(node, null, 2);
-
-                renderProfileHistoryTab();
-                alert(`✅ Mentor analysis successfully attached to Node #${node.id} (${node.move_san})!`);
-            }
-        } catch (err) {
-            console.error('[Mentor Single] Error:', err);
-            alert(`⚠️ Mentor query failed: ${err.message}`);
+            await analyzeSingleNode(findEventForNode(selectedHistoryNodeJson), selectedHistoryNodeJson, 'mentor');
         } finally {
             btnMentorSingleNode.disabled = false;
             btnMentorSingleNode.textContent = '🧠 Mentor Analyze';
@@ -8575,49 +8379,46 @@ function buildProfileDagTree(profile) {
     events.forEach(ev => {
         (ev.moves || []).forEach(n => {
             totalNodes++;
-            const sfSt = n.stockfish_analysis_status || n.analysis_status;
-            const mentorSt = n.mentor_analysis_status || n.analysis_status;
-            if (['NEED_ANALYSIS', 'PENDING', 'PENDING_ANALYSIS'].includes(sfSt) || ['NEED_ANALYSIS', 'PENDING', 'PENDING_ANALYSIS'].includes(mentorSt)) {
+            const eng = nodeEngine(n);
+            const mv = n.analysis?.move || null;
+            const aspects = mv?.aspects || {};
+            if (!eng || !n.analysis?.mentor) {
                 needAnalysisCount++;
             }
-            if ((n.time_control_metrics && n.time_control_metrics.time_pressure_flag) || (n.per_sequence_analysis && n.per_sequence_analysis.time_pressure_flag)) {
+            if (n.time_control_metrics && n.time_control_metrics.time_pressure_flag) {
                 timePressureCount++;
             }
-            const pm = n.per_move_analysis || {};
-            const cls = pm.move_classification;
-            if (['Blunder', 'Mistake', 'Inaccuracy', 'Brilliant', 'Great', 'Missed Opportunity'].includes(cls)) {
+            const cls = eng?.quality || null;
+            if (ERROR_QUALITIES.includes(cls) || eng?.missed_opportunity) {
                 eventfulCount++;
             }
-            const flags = pm.six_aspect_flags || {};
-            if (flags.offensive_creation) {
+            if ((aspects.building_state ?? 0) >= 50) {
                 offCreationCount++;
                 aspectNodes.offensive_creation.push(n);
             }
-            if (flags.offensive_execution) {
+            if ((aspects.seizing_opportunity ?? 0) >= 50) {
                 offExecutionCount++;
                 aspectNodes.offensive_execution.push(n);
             }
-            if (flags.offensive_yield > 0) {
-                offYieldSum += flags.offensive_yield;
+            if ((aspects.score ?? 0) > 0) {
+                offYieldSum += aspects.score;
                 offYieldCount++;
                 aspectNodes.offensive_yield.push(n);
             }
-            if (flags.defensive_prevention) {
+            if ((aspects.preventing_opponent_building_state ?? 0) >= 50) {
                 defPrevCount++;
                 aspectNodes.defensive_prevention.push(n);
             }
-            if (flags.defensive_failure) {
+            if (cls === 'Mistake' || cls === 'Blunder') {
                 defFailCount++;
                 aspectNodes.defensive_failure.push(n);
-                if (flags.defensive_damage > 0) {
-                    defDamageSum += flags.defensive_damage;
+                if ((aspects.opponent_score ?? 0) > 0) {
+                    defDamageSum += aspects.opponent_score;
                     defDamageCount++;
                     aspectNodes.defensive_damage.push(n);
                 }
-            }
-
-            const subErr = pm.tactical_sub_category;
-            if (subErr && ['Blunder', 'Mistake'].includes(cls)) {
+                // Repeated-error key: the strongest opponent chance this move allowed or ignored
+                const subErr = mv?.motifs_against?.[0]?.id || 'no_detected_pattern';
                 errorCounts[subErr] = (errorCounts[subErr] || 0) + 1;
                 if (!errorNodes[subErr]) errorNodes[subErr] = [];
                 errorNodes[subErr].push(n);
@@ -8627,10 +8428,10 @@ function buildProfileDagTree(profile) {
                 id: n.id,
                 gameId: ev.id,
                 moveSan: n.move_san,
-                eval: pm.stockfish_eval,
-                evalDelta: pm.eval_delta,
+                eval: eng ? formatEval(eng.eval_after, eng.mate_after) : null,
+                evalDelta: eng?.eval_delta ?? null,
                 classification: cls,
-                category: pm.tactical_category,
+                category: mv?.primary_motif?.id || mv?.category || null,
                 fen: n.fen
             });
         });
@@ -8640,12 +8441,11 @@ function buildProfileDagTree(profile) {
     const avgYield = offYieldCount > 0 ? Math.round(offYieldSum / offYieldCount) : 0;
     const avgDamage = defDamageCount > 0 ? Math.round(defDamageSum / defDamageCount) : 0;
 
-    const errorLabels = {
-        undefended_loose_piece: { title: "Leaving Undefended Loose Targets", desc: "Leaving minor pieces un-backed during middlegame tactical exchanges under time pressure." },
-        king_exposure: { title: "Premature Pawn Push & King Exposure", desc: "Advancing pawns in front of the castled king creates weak holes and invades opponent pieces." },
-        diagonal_pin: { title: "Missing Diagonal Pins on Queens/Rooks", desc: "Failing to spot bishop/queen pin skewers along major diagonals." },
-        premature_simplification: { title: "Premature Rooks/Queens Simplification Loss", desc: "Trading heavy pieces when down in pawn material instead of creating counterplay." }
-    };
+    const errorLabels = {};
+    Object.entries(MOTIF_CATALOG).forEach(([id, info]) => {
+        errorLabels[id] = { title: info.label, desc: info.against || info.for || '' };
+    });
+    errorLabels.no_detected_pattern = { title: "Engine-Only Error", desc: "Stockfish shows a loss but no board pattern was detected (usually a deeper calculation error)." };
 
     const repeatingErrors = Object.keys(errorCounts).map(ek => {
         const info = errorLabels[ek] || { title: ek.replace('_', ' '), desc: "Repeating tactical pattern." };
@@ -8836,15 +8636,16 @@ function openQaDagJsonExplorerModal() {
         const chipList = gBox.querySelector('.qa-nodes-chip-list');
         moves.forEach((m, idx) => {
             const chip = document.createElement('button');
-            const pm = m.per_move_analysis || {};
-            const cls = pm.move_classification || 'Move';
+            const eng = nodeEngine(m);
+            const cls = eng?.quality || 'Move';
             const isBlund = cls === 'Blunder';
-            const isMiss = cls === 'Missed Opportunity';
+            const isMiss = !!eng?.missed_opportunity || cls === 'Mistake';
             const bg = isBlund ? '#7f1d1d' : (isMiss ? '#78350f' : '#27272a');
             const bcol = isBlund ? '#ef4444' : (isMiss ? '#f59e0b' : '#3f3f46');
             chip.style.cssText = `background:${bg}; border:1px solid ${bcol}; color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; cursor:pointer; font-family:monospace;`;
             chip.textContent = `${m.move_number}.${m.color === 'b' ? '..' : ''}${m.move_san}`;
-            chip.title = `${cls} (${pm.strategic_swing_label || ''})`;
+            chip.title = eng ? `${cls} (${formatEval(eng.eval_before, eng.mate_before)} → ${formatEval(eng.eval_after, eng.mate_after)})` : 'Not analysed';
+            chip.oncontextmenu = (e) => openMoveContextMenu(e, m, g);
             chip.onclick = (e) => {
                 e.stopPropagation();
                 document.querySelectorAll('.qa-nodes-chip-list button').forEach(b => b.style.outline = 'none');
@@ -8916,62 +8717,20 @@ function initEnhancedAnalyticsUI() {
     initQaJsonExplorerEvents();
 }
 
-// Selective DAG Analysis Trigger
+// Selective DAG Analysis Trigger: real Stockfish move + sequence batches over pending nodes
 async function triggerSelectiveDagAnalysis() {
-    const prof = getActiveProfile();
-    if (!prof) return;
-
     const btnAnalyze = document.getElementById('btn-run-dag-analysis');
-    const pContainer = document.getElementById('dag-analysis-progress-container');
-    const pBar = document.getElementById('dag-analysis-progress-bar');
-    const needCountEl = document.getElementById('hdr-need-analysis-count');
-
     if (btnAnalyze) {
         btnAnalyze.disabled = true;
-        btnAnalyze.textContent = '⏳ Analyzing Pending Nodes...';
+        btnAnalyze.textContent = '⏳ Stockfish is analysing pending nodes...';
     }
-    if (pContainer) pContainer.classList.remove('hidden');
-
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 20;
-        if (pBar) pBar.style.width = `${progress}%`;
-        if (progress >= 100) {
-            clearInterval(interval);
-            
-            // Mark all pending nodes in history as ANALYZED
-            if (prof.history) {
-                prof.history.forEach(ev => {
-                    (ev.moves || []).forEach(n => {
-                        if (n.stockfish_analysis_status === 'NEED_ANALYSIS' || n.stockfish_analysis_status === 'PENDING') {
-                            n.stockfish_analysis_status = 'ANALYZED';
-                        }
-                        if (n.mentor_analysis_status === 'NEED_ANALYSIS' || n.mentor_analysis_status === 'PENDING') {
-                            n.mentor_analysis_status = 'ANALYZED';
-                        }
-                        delete n.analysis_status;
-                    });
-                });
-                saveUserProfilesToStorage();
-            }
-
-            if (btnAnalyze) {
-                btnAnalyze.textContent = '✅ Analysis Complete!';
-                btnAnalyze.style.background = '#16a34a';
-            }
-            if (needCountEl) needCountEl.textContent = '0';
-
-            setTimeout(() => {
-                if (pContainer) pContainer.classList.add('hidden');
-                if (pBar) pBar.style.width = '0%';
-                if (btnAnalyze) {
-                    btnAnalyze.disabled = false;
-                    btnAnalyze.textContent = '⚡ Analyze (0 Pending)';
-                }
-                openEnhancedAnalyticsModal();
-            }, 1000);
-        }
-    }, 120);
+    try {
+        await runAtomicAnalysisBatch('sf_move');
+        await runAtomicAnalysisBatch('sf_seq');
+    } finally {
+        if (btnAnalyze) btnAnalyze.disabled = false;
+        openEnhancedAnalyticsModal();
+    }
 }
 
 // Event renaming
@@ -9011,8 +8770,9 @@ function openDagNodeBrowserModal(categoryTitle, nodes) {
         nodes.forEach(n => {
             const item = document.createElement('div');
             item.style.cssText = 'background:#1e293b; border:1px solid #334155; border-radius:6px; padding:8px; margin-bottom:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
-            const cls = n.per_move_analysis?.move_classification || n.classification || 'Good';
-            const evalDelta = n.per_move_analysis?.eval_delta ?? n.evalDelta ?? 0;
+            const eng = nodeEngine(n);
+            const cls = eng?.quality || n.classification || 'Not analysed';
+            const evalDelta = eng?.eval_delta ?? n.evalDelta ?? 0;
             const moveSan = n.move_san || n.moveSan || '?';
             item.innerHTML = `
                 <div>
@@ -9031,9 +8791,9 @@ function openDagNodeBrowserModal(categoryTitle, nodes) {
                 if (descEl) {
                     descEl.innerHTML = `
                         <div style="font-family:monospace; margin-bottom:6px;">
-                            <div><strong>Stockfish Eval:</strong> ${n.per_move_analysis?.stockfish_eval ?? n.eval ?? 0}</div>
+                            <div><strong>Stockfish Eval:</strong> ${eng ? formatEval(eng.eval_after, eng.mate_after) : (n.eval ?? '—')}</div>
                             <div><strong>Eval Swing:</strong> <span style="color:${evalDelta < 0 ? '#f87171' : '#4ade80'}">${evalDelta}</span></div>
-                            <div><strong>Tactical Category:</strong> ${n.per_move_analysis?.tactical_category ?? n.category ?? 'Tactics'}</div>
+                            <div><strong>Pattern:</strong> ${n.analysis?.move?.primary_motif ? motifLabel(n.analysis.move.primary_motif.id) + ' (' + n.analysis.move.primary_motif.side + ')' : (n.analysis?.move?.category ?? n.category ?? '—')}</div>
                         </div>
                     `;
                 }
@@ -9074,6 +8834,7 @@ async function syncProfilesWithBackend(forceRefresh = false) {
                         userProfiles.push(bp);
                     }
                 });
+                userProfiles.forEach(migrateProfileNodesToAnalysisV2);
                 saveUserProfilesToStorage();
                 renderProfileHistoryTab();
                 renderProfileSummaryCard();

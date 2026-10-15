@@ -13,6 +13,7 @@ class ChessEngineManager:
     def __init__(self, stockfish_path: str = ""):
         self.stockfish_path = stockfish_path or STOCKFISH_PATH
         self._engine: Optional[chess.engine.SimpleEngine] = None
+        self._review_cache: Dict[Any, Dict[str, Any]] = {}
         self._init_local_engine()
 
     def _init_local_engine(self):
@@ -33,10 +34,21 @@ class ChessEngineManager:
             "/usr/local/bin/stockfish"
         ])
 
+        # Relative candidates resolve against the project root, not the launch directory
+        # (Windows cannot spawn a relative "stockfish/stockfish.exe" reliably).
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        candidates = [p if os.path.isabs(p) else os.path.join(project_root, p) for p in candidates]
+
         for path in candidates:
             if os.path.exists(path) or (os.name == 'posix' and os.access(path, os.X_OK)):
                 try:
                     self._engine = chess.engine.SimpleEngine.popen_uci(path)
+                    # The engine's I/O thread is non-daemon; quit it before the interpreter waits on it.
+                    try:
+                        import threading
+                        threading._register_atexit(self.close)
+                    except Exception:
+                        pass
                     print(f"[EngineManager] Connected to local Stockfish at: {path}")
                     return
                 except Exception as e:
@@ -110,6 +122,53 @@ class ChessEngineManager:
 
         # 3. Heuristic Fallback based on material balance & active board state
         return self._heuristic_eval(board)
+
+    async def analyse_for_review(self, board: chess.Board, depth: int = 14) -> Optional[Dict[str, Any]]:
+        """
+        Engine evaluation for history analysis: {"cp", "mate", "best_move", "depth", "source"} (White POV).
+        Returns None when no real engine is reachable - never a material-count guess.
+        """
+        key = (board.fen(), depth)
+        if key in self._review_cache:
+            return self._review_cache[key]
+
+        result = None
+        if board.is_game_over():
+            if board.is_checkmate():
+                # The side to move is mated: report it as a decisive score for the other side
+                result = {"cp": None, "mate": 1 if board.turn == chess.BLACK else -1, "best_move": None,
+                          "depth": depth, "source": "rules"}
+            else:
+                result = {"cp": 0, "mate": None, "best_move": None, "depth": depth, "source": "rules"}
+        elif self._engine:
+            try:
+                info = self._engine.analyse(board, chess.engine.Limit(depth=depth))
+                score = info["score"].white()
+                pv = info.get("pv") or []
+                result = {
+                    "cp": None if score.is_mate() else score.score(),
+                    "mate": score.mate() if score.is_mate() else None,
+                    "best_move": pv[0].uci() if pv else None,
+                    "depth": info.get("depth", depth),
+                    "source": "local_stockfish",
+                }
+            except Exception as e:
+                print(f"[EngineManager] Review analysis failed: {e}")
+        if result is None:
+            cloud = await self._fetch_cloud_eval(board.fen())
+            if cloud:
+                result = {
+                    "cp": None if cloud["eval_type"] == "mate" else int(round(cloud["eval_val"] * 100)),
+                    "mate": cloud["eval_val"] if cloud["eval_type"] == "mate" else None,
+                    "best_move": cloud.get("best_move") or None,
+                    "depth": cloud.get("depth"),
+                    "source": "lichess_cloud",
+                }
+        if result is not None:
+            if len(self._review_cache) > 20000:
+                self._review_cache.clear()
+            self._review_cache[key] = result
+        return result
 
     async def get_bot_move(self, board: chess.Board, skill_level: int = 20, target_elo: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -225,6 +284,7 @@ class ChessEngineManager:
                             eval_type = "cp"
 
                         best_uci = moves[0] if moves else ""
+                        board = chess.Board(fen)
                         top_moves_list = []
                         for m_uci in moves[:3]:
                             try:

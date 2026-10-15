@@ -256,14 +256,16 @@ class MentorService:
                 return {
                     "provider": f"NotebookLM ({target_notebook[:8]}...)",
                     "response": res["text"],
-                    "notebook_id": target_notebook
+                    "notebook_id": target_notebook,
+                    "connected": True
                 }
 
         heuristic_response = self._generate_heuristic_explanation(prompt)
         return {
             "provider": "Chess AI Mentor (Local Strategy Engine)",
             "response": heuristic_response,
-            "notebook_id": target_notebook or "None (Select a NotebookLM notebook)"
+            "notebook_id": target_notebook or "None (Select a NotebookLM notebook)",
+            "connected": False
         }
 
     async def _query_notebooklm_py(self, prompt: str, notebook_id: str) -> Dict[str, Any]:

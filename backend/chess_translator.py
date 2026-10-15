@@ -105,6 +105,55 @@ ECO_DATABASE = {
             {"move": "b1c3", "san": "Nc3", "win": 52, "draw": 29, "loss": 19, "name": "Classical Main Line"},
             {"move": "g2g3", "san": "g3", "win": 50, "draw": 32, "loss": 18, "name": "Fianchetto Variation"}
         ]
+    },
+    "c2c4": {
+        "name": "English Opening",
+        "eco": "A10",
+        "desc": "A flexible hypermodern flank opening fighting for the d5 square.",
+        "continuations": [
+            {"move": "e7e5", "san": "e5", "win": 47, "draw": 30, "loss": 23, "name": "Reversed Sicilian"},
+            {"move": "c7c5", "san": "c5", "win": 46, "draw": 34, "loss": 20, "name": "Symmetrical English"}
+        ]
+    },
+    "g1f3": {
+        "name": "Reti Opening",
+        "eco": "A04",
+        "desc": "A hypermodern opening developing the knight without declaring central pawns.",
+        "continuations": [
+            {"move": "d7d5", "san": "d5", "win": 48, "draw": 32, "loss": 20, "name": "Reti: Main Line"}
+        ]
+    },
+    "e2e4 d7d5": {
+        "name": "Scandinavian Defense",
+        "eco": "B01",
+        "desc": "Direct central challenge forcing White to resolve the tension on d5.",
+        "continuations": [
+            {"move": "e4d5", "san": "exd5", "win": 53, "draw": 26, "loss": 21, "name": "Main Line"}
+        ]
+    },
+    "e2e4 d7d6": {
+        "name": "Pirc Defense",
+        "eco": "B07",
+        "desc": "Hypermodern defense allowing White a full pawn center to strike back with c5 or e5.",
+        "continuations": [
+            {"move": "d2d4", "san": "d4", "win": 52, "draw": 27, "loss": 21, "name": "Classical Pirc"}
+        ]
+    },
+    "d2d4 d7d5 c1f4": {
+        "name": "London System",
+        "eco": "D00",
+        "desc": "Solid, resilient opening setup developing the dark-squared bishop outside the pawn chain.",
+        "continuations": [
+            {"move": "g8f6", "san": "Nf6", "win": 48, "draw": 34, "loss": 18, "name": "Modern London"}
+        ]
+    },
+    "e2e4 e7e5 g1f3 b8c6 d2d4": {
+        "name": "Scotch Game",
+        "eco": "C45",
+        "desc": "Direct central blow breaking open the d-file and activating piece play.",
+        "continuations": [
+            {"move": "e5d4", "san": "exd4", "win": 49, "draw": 29, "loss": 22, "name": "Scotch Accepted"}
+        ]
     }
 }
 
@@ -115,19 +164,34 @@ class ChessTranslator:
     """
 
     @staticmethod
-    def identify_opening(board: chess.Board) -> str:
+    def identify_opening(board: chess.Board, sequence_moves: Optional[List[str]] = None) -> str:
         """
         Matches move history against ECO opening dictionary.
         """
-        info = ChessTranslator.get_opening_info(board)
+        info = ChessTranslator.get_opening_info(board, sequence_moves)
         return info["name"]
 
     @staticmethod
-    def get_opening_info(board: chess.Board) -> Dict[str, Any]:
+    def get_opening_info(board: chess.Board, sequence_moves: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Returns full ECO dictionary entry for board move sequence.
+        Supports both board.move_stack and external sequence_moves.
         """
-        moves_str = " ".join([m.uci() for m in board.move_stack])
+        moves_list = [m.uci() for m in board.move_stack]
+        if not moves_list and sequence_moves:
+            # Reconstruct UCI move list from sequence_moves
+            temp_board = chess.Board()
+            for sm in sequence_moves:
+                try:
+                    m = temp_board.push_san(sm)
+                    moves_list.append(m.uci())
+                except Exception:
+                    try:
+                        m = temp_board.push_uci(sm)
+                        moves_list.append(m.uci())
+                    except Exception:
+                        pass
+        moves_str = " ".join(moves_list)
         
         matched_opening = {
             "name": "Standard Position / Open Game",
@@ -428,3 +492,42 @@ The current position in FEN notation is:
 Question:
 {user_question or "What is the strategic evaluation, best plan, and opening advice for this position?"}
 """
+
+    @staticmethod
+    def determine_game_phase(board: chess.Board, move_number: int = 1) -> str:
+        """
+        Determines whether the board is in opening, midgame, or endgame.
+        """
+        total_pieces = len(board.piece_map())
+        queens = len(board.pieces(chess.QUEEN, chess.WHITE)) + len(board.pieces(chess.QUEEN, chess.BLACK))
+        
+        piece_vals = {chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
+        white_non_pawn = sum(piece_vals.get(p.piece_type, 0) for sq, p in board.piece_map().items() if p.color == chess.WHITE)
+        black_non_pawn = sum(piece_vals.get(p.piece_type, 0) for sq, p in board.piece_map().items() if p.color == chess.BLACK)
+        
+        if white_non_pawn <= 13 and black_non_pawn <= 13:
+            return "endgame"
+        if queens == 0 and (white_non_pawn <= 16 and black_non_pawn <= 16):
+            return "endgame"
+        if move_number <= 10 and total_pieces >= 28:
+            return "opening"
+        return "midgame"
+
+    @staticmethod
+    def is_passed_pawn(board: chess.Board, square: int, color: chess.Color) -> bool:
+        """
+        Checks if a pawn on the given square is a passed pawn.
+        """
+        f_idx = chess.square_file(square)
+        r_idx = chess.square_rank(square)
+        enemy_color = not color
+        adj_files = [f for f in (f_idx - 1, f_idx, f_idx + 1) if 0 <= f <= 7]
+        for enemy_sq in board.pieces(chess.PAWN, enemy_color):
+            e_file = chess.square_file(enemy_sq)
+            e_rank = chess.square_rank(enemy_sq)
+            if e_file in adj_files:
+                if color == chess.WHITE and e_rank > r_idx:
+                    return False
+                elif color == chess.BLACK and e_rank < r_idx:
+                    return False
+        return True
