@@ -1115,10 +1115,17 @@ async def analyze_node_with_mentor(req: MentorNodeAnalysisRequest):
     if not (req.analysis or {}).get("engine"):
         raise HTTPException(status_code=400, detail="Run Stockfish analysis on this move first.")
     prompt = build_mentor_node_prompt(req)
-    mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id)
+    # Structured node prompts take NotebookLM ~30-60s to answer; allow up to two minutes.
+    mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id, timeout=120.0)
     if not mentor_res.get("connected"):
-        return {"success": False, "node_id": req.node_id, "mentor": None,
-                "error": "NotebookLM is not connected (log in and select a notebook in Settings)."}
+        reason = mentor_res.get("error_reason")
+        messages = {
+            "no_notebook": "NotebookLM is not connected: no notebook selected (log in and select a notebook in Settings).",
+            "timeout": "NotebookLM did not answer within 2 minutes. Try again in a moment.",
+            "cli_error": "NotebookLM request failed (check the login in Settings; see the server log for details).",
+        }
+        return {"success": False, "node_id": req.node_id, "mentor": None, "error_reason": reason,
+                "error": messages.get(reason, messages["cli_error"])}
 
     parsed = _parse_mentor_json(mentor_res.get("response", ""))
     if not parsed:

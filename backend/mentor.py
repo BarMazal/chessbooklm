@@ -205,7 +205,8 @@ class MentorService:
                 stderr=subprocess.PIPE
             )
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=3.0)
+                # `notebooklm list` typically takes 4-5s; a 3s limit made auto-selection always fail
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15.0)
             except asyncio.TimeoutError:
                 try:
                     process.kill()
@@ -233,9 +234,12 @@ class MentorService:
             print(f"[MentorService] Failed to list notebooks: {e}")
         return []
 
-    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None) -> Dict[str, Any]:
+    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None, timeout: float = 8.0) -> Dict[str, Any]:
         """
         Sends query to NotebookLM notebook, or falls back to smart strategy engine.
+        `timeout` bounds the NotebookLM `ask` call; long structured prompts can take ~1 minute.
+        The result carries `connected` and, when not connected, `error_reason`
+        ("no_notebook" | "timeout" | "cli_error").
         """
         target_notebook = notebook_id or self.notebook_id
 
@@ -250,8 +254,10 @@ class MentorService:
                     target_notebook = notebooks[0]["id"]
                 self.notebook_id = target_notebook
 
+        error_reason = "no_notebook"
         if target_notebook:
-            res = await self._query_notebooklm_py(prompt, target_notebook)
+            res = await self._query_notebooklm_py(prompt, target_notebook, timeout=timeout)
+            error_reason = res.get("error_reason", "cli_error")
             if res.get("success"):
                 return {
                     "provider": f"NotebookLM ({target_notebook[:8]}...)",
@@ -265,10 +271,11 @@ class MentorService:
             "provider": "Chess AI Mentor (Local Strategy Engine)",
             "response": heuristic_response,
             "notebook_id": target_notebook or "None (Select a NotebookLM notebook)",
-            "connected": False
+            "connected": False,
+            "error_reason": error_reason
         }
 
-    async def _query_notebooklm_py(self, prompt: str, notebook_id: str) -> Dict[str, Any]:
+    async def _query_notebooklm_py(self, prompt: str, notebook_id: str, timeout: float = 8.0) -> Dict[str, Any]:
         """
         Queries NotebookLM notebook via CLI ask subcommand with --json to retrieve grounded AI answer.
         """
@@ -284,14 +291,14 @@ class MentorService:
                 stderr=subprocess.PIPE
             )
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=8.0)
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
             except asyncio.TimeoutError:
                 try:
                     process.kill()
                 except Exception:
                     pass
-                print("[MentorService] notebooklm ask timed out after 8s; falling back to local engine.")
-                return {"success": False, "text": ""}
+                print(f"[MentorService] notebooklm ask timed out after {timeout:.0f}s; falling back to local engine.")
+                return {"success": False, "text": "", "error_reason": "timeout"}
 
             if process.returncode == 0 and stdout:
                 raw_out = stdout.decode("utf-8", errors="ignore").strip()

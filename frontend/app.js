@@ -7694,11 +7694,13 @@ async function runMentorAnalysisForNode(ev, node, analysisType = 'all') {
         analysis: node.analysis,
         time_control_metrics: node.time_control_metrics || null,
         game_errors: gameErrorCountsBefore(ev, node),
-        analysis_type: analysisType
+        analysis_type: analysisType,
+        notebook_id: currentNotebookId || null
     });
     if (!data.success || !data.mentor) {
         const err = new Error(data.error || 'Mentor analysis failed');
-        err.mentorUnavailable = /not connected/i.test(data.error || '');
+        // Stop a batch when NotebookLM is unreachable (not for a single slow answer)
+        err.mentorUnavailable = ['no_notebook', 'cli_error'].includes(data.error_reason);
         throw err;
     }
     const merged = Object.assign({}, node.analysis.mentor || {});
@@ -7849,7 +7851,9 @@ function openMoveContextMenu(e, node, ev) {
 async function analyzeSingleNode(ev, node, kind) {
     ev = ev || findEventForNode(node);
     if (!ev) return;
-    showGameToast(kind === 'mentor' ? `🧠 Asking the mentor about ${node.move_san}...` : `📈 Stockfish is analysing ${node.move_san}...`, 2500);
+    showGameToast(kind === 'mentor'
+        ? `🧠 Asking the mentor about ${node.move_san}... (NotebookLM usually needs 30-60 seconds)`
+        : `📈 Stockfish is analysing ${node.move_san}...`, kind === 'mentor' ? 8000 : 2500);
     try {
         if (kind === 'mentor') {
             await runMentorAnalysisForNode(ev, node, 'all');

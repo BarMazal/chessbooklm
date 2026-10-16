@@ -5,6 +5,36 @@ picked up without guessing. Newest entry first.
 
 ---
 
+## 2026-10-16: Mentor node analysis reported "not connected" although chat worked
+
+**Cause:** NotebookLM *was* connected. Two timeouts in `backend/mentor.py` were too short:
+- `ask` had a hard **8 s** timeout. The structured node prompt takes NotebookLM **~40–55 s** (measured),
+  so it always timed out. Short chat questions fit within 8 s. On timeout the service returns
+  `connected: False`, which the node endpoint showed as "not connected".
+- `list` (used to auto-select a notebook when none is configured; `.env` has an empty
+  `NOTEBOOKLM_NOTEBOOK_ID`) had a **3 s** timeout, but the CLI takes ~4.5 s.
+- The node-analysis request also did not send the notebook selected in the UI, unlike the chat.
+
+**Changes:**
+- **`MentorService.query_mentor(prompt, notebook_id, timeout=8.0)`:** the timeout is now a parameter
+  (the default is unchanged for the other features). When not connected, the result carries
+  `error_reason`: `no_notebook | timeout | cli_error`.
+- **Notebook listing:** the `list` timeout is now 15 s.
+- **`/api/mentor/node-analysis`:** uses `timeout=120`, returns `error_reason`, and shows a message that
+  matches it.
+- **Frontend:**
+  - Sends `notebook_id: currentNotebookId`.
+  - A batch stops only on `no_notebook` / `cli_error`, not on a single timeout.
+  - The toast tells the user that NotebookLM needs 30–60 s.
+
+**Verified:** a real end-to-end call auto-selected the "Chess" notebook and returned valid JSON in
+39.5 s.
+
+**Note:** other features (chat, live coaching, quiz, …) still use the 8 s default. Their longer
+questions may silently fall back to `_generate_heuristic_explanation` text. Worth reviewing.
+
+---
+
 ## 2026-10-15 (part 2): Game lifecycle, undo branches, back-rank motif
 
 **By:** Claude Code. Not committed yet.
@@ -286,8 +316,8 @@ Supporting changes:
 
 ### Open points / ideas for next steps
 
-- **Mentor run with NotebookLM connected:** never tested here (NotebookLM was not connected in the test
-  server). The prompt asks for `{move_comment, sequence_comment, key_idea, drill}`.
+- **Mentor batch cost:** about 40–55 s per node with NotebookLM (verified on 2026-10-16), so a full QA
+  batch would take many hours.
 - **Mentor batch** uses one NotebookLM call per node (≈ 870 calls for QA). Consider limiting it to
   Inaccuracy/Mistake/Blunder nodes.
 - **Detector heuristics** (hanging/pin/fork) still ignore some defensive resources (pinned attackers, …).
