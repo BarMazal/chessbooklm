@@ -234,7 +234,7 @@ class MentorService:
             print(f"[MentorService] Failed to list notebooks: {e}")
         return []
 
-    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None, timeout: float = 8.0) -> Dict[str, Any]:
+    async def query_mentor(self, prompt: str, notebook_id: Optional[str] = None, timeout: float = 60.0) -> Dict[str, Any]:
         """
         Sends query to NotebookLM notebook, or falls back to smart strategy engine.
         `timeout` bounds the NotebookLM `ask` call; long structured prompts can take ~1 minute.
@@ -275,7 +275,7 @@ class MentorService:
             "error_reason": error_reason
         }
 
-    async def _query_notebooklm_py(self, prompt: str, notebook_id: str, timeout: float = 8.0) -> Dict[str, Any]:
+    async def _query_notebooklm_py(self, prompt: str, notebook_id: str, timeout: float = 60.0) -> Dict[str, Any]:
         """
         Queries NotebookLM notebook via CLI ask subcommand with --json to retrieve grounded AI answer.
         """
@@ -334,8 +334,107 @@ class MentorService:
     def _generate_heuristic_explanation(self, prompt: str) -> str:
         lines = prompt.split("\n")
         eval_line = next((l for l in lines if "Evaluation:" in l or "Score:" in l), "Equally balanced position.")
-        opening_line = next((l for l in lines if "Opening:" in l), "Standard Opening Position.")
-        move_line = next((l for l in lines if "Top Recommended Move" in l or "suggests" in l), "Develop key pieces.")
+        opening_line = next((l for l in lines if "Identified Opening:" in l or "Opening:" in l), "Standard Opening Position.")
+        move_line = next((l for l in lines if "Top Recommended Move by Engine:" in l or "Top Recommended Move" in l or "suggests" in l), "Develop key pieces.")
+        reviewed_line = next((l for l in lines if "CURRENT REVIEWED MOVE:" in l), None)
+
+        # Extract concrete tactical comparison
+        tactical_comp = []
+        if "- CONCRETE TACTICAL COMPARISON:" in prompt:
+            t_part = prompt.split("- CONCRETE TACTICAL COMPARISON:")[1].split("- USER INQUIRED ALTERNATIVE CANDIDATE MOVES:")[0].split("- King & Tactical Status:")[0].strip()
+            tactical_comp = [l.strip() for l in t_part.split("\n") if l.strip().startswith("*")]
+
+        # Extract user inquired candidate moves
+        candidate_lines = []
+        if "- USER INQUIRED ALTERNATIVE CANDIDATE MOVES:" in prompt:
+            cand_part = prompt.split("- USER INQUIRED ALTERNATIVE CANDIDATE MOVES:")[1].split("- King & Tactical Status:")[0].strip()
+            candidate_lines = [l.strip() for l in cand_part.split("\n") if l.strip().startswith("* Move")]
+
+        # Extract user custom question
+        user_query = None
+        if "USER QUERY / DISCUSSION ITEM:" in prompt:
+            uq_part = prompt.split("USER QUERY / DISCUSSION ITEM:")[1].split("SPECIAL FORMATTING INSTRUCTIONS:")[0].strip()
+            if uq_part and not uq_part.startswith("Explain why Stockfish recommends"):
+                user_query = uq_part
+
+        is_follow_up = "PRIOR CONVERSATION HISTORY" in prompt
+
+        if reviewed_line and (user_query or is_follow_up):
+            rev_clean = reviewed_line.replace("- CURRENT REVIEWED MOVE:", "").strip()
+            m_played = rev_clean.split(" was played")[0].strip() if " was played" in rev_clean else "the played move"
+            m_best = rev_clean.split("Recommended best move was ")[1].split(".")[0].strip() if "Recommended best move was " in rev_clean else "the recommended move"
+            m_qual = rev_clean.split("evaluated as a ")[1].split()[0].strip() if "evaluated as a " in rev_clean else "Move"
+
+            played_points = [tc.replace("* What went wrong with ", "").replace("* ", "") for tc in tactical_comp if "What went wrong" in tc]
+            best_points = [tc.replace("* Why ", "").replace("* ", "") for tc in tactical_comp if "Why " in tc or "decisive" in tc]
+
+            played_desc = "\n".join([f"* **{p}**" for p in played_points]) if played_points else f"* **Conceding Initiative & Tempo:** Moving **{m_played}** was too passive for this active position. Instead of maintaining pressure or invading the opponent's ranks, it conceded crucial tempi and allowed the opponent time to consolidate."
+            best_desc = "\n".join([f"* **{p}**" for p in best_points]) if best_points else f"* **Forcing Infiltration & Activity:** In contrast, **{m_best}** immediately seizes the initiative by creating concrete forcing threats (infiltrating key ranks, attacking loose pieces, or winning tempo), giving the opponent no time to untangle."
+
+            cand_block = ""
+            if candidate_lines:
+                cand_bullets = "\n".join([f"* **{cl.replace('* Move ', 'Candidate ')}**" for cl in candidate_lines])
+                cand_block = f"""
+
+#### 🎯 Alternative Moves You Inquired About:
+{cand_bullets}
+* **Human Practicality vs. Engine Lines:** While engines calculate razor-sharp queen infiltrations, choosing a solid alternative that fits your comfort zone is often superior practical chess. If a candidate move keeps your king safe and avoids tactical blunders, it is a sound human choice."""
+
+            intro_sentence = f"Building upon our previous turns, here is the concrete tactical breakdown between **{m_played}** and **{m_best}**:" if is_follow_up else f"Here is the tactical and strategic breakdown of why **{m_played}** failed and why **{m_best}** was the winning move:"
+
+            return f"""### ♟️ Move Refutation & Tactical Breakdown
+
+{intro_sentence}
+
+#### ❌ What Went Wrong with {m_played} ({m_qual.title()})
+{played_desc}
+* **The Strategic Concession:** A move is graded as a blunder not just when it drops a piece on the spot, but when it completely surrenders dynamic momentum. Playing **{m_played}** relinquished active pressure, letting the opponent untangle their defenses.
+
+#### ⚡ Why {m_best} Was Decisive
+{best_desc}
+* **Tempo & Positional Dominance:** **{m_best}** forces the opponent to respond to immediate, multiple threats instead of executing their own plan. It coordinates your forces on dominant ranks/files and maintains maximum pressure.{cand_block}
+
+#### 💡 The Practical Takeaway
+When you have the chance to launch an active piece infiltration into the opponent's territory (like **{m_best}**), playing a cautious or passive move like **{m_played}** lets your entire advantage slip away. In critical positions, always prioritize your most forcing candidate moves (checks, captures, and deep penetrations)!
+"""
+
+        if reviewed_line:
+            rev_clean = reviewed_line.replace("- CURRENT REVIEWED MOVE:", "").strip()
+            opening_title = opening_line.replace('- Identified Opening:', '').strip()
+
+            tactical_breakdown_block = ""
+            if tactical_comp:
+                tactical_items = "\n".join([f"* **{tc.replace('* ', '')}**" for tc in tactical_comp])
+                tactical_breakdown_block = f"""
+**2. Tactical Cause & Refutation**
+{tactical_items}
+"""
+
+            candidates_section = ""
+            if candidate_lines:
+                cand_bullets = "\n".join([f"* **{cl.replace('* Move ', 'Candidate ')}**" for cl in candidate_lines])
+                candidates_section = f"""
+**4. Evaluated Candidate Alternatives**
+{cand_bullets}
+* **Human Practicality vs. Engine Lines:** While engines rank moves by fractions of a pawn, choosing a solid alternative that fits your strategic comfort zone is often superior practical chess.
+"""
+
+            return f"""### ♟️ Move & Tactical Analysis
+
+**1. Move Review & Evaluation**
+* **Played Move Analysis:** {rev_clean}
+* **Position Control:** {eval_line.replace('- Stockfish Engine Evaluation:', '').strip()}
+{tactical_breakdown_block}
+**3. Tactical & Engine Guidance**
+* **Next Engine Recommendation:** {move_line.replace('- Top Recommended Move by Engine:', '').strip()}
+* **Tactical Tip:** Calculate all opponent forcing replies (checks, captures, and threats) before committing to a move. Ensure you do not leave pieces undefended or skewered.
+{candidates_section}
+**5. General Strategic Plan ({opening_title})**
+* **Pawn Structure:** Maintain central presence or establish pawn chains that support piece outposts.
+* **Piece Coordination:** Avoid leaving pieces undefended (LPDO - Loose Pieces Drop Off). Bring rooks to open files and safeguard king mobility.
+
+*(Tip: Log in with your target Google account in the top panel to load your chess books notebook!)*
+"""
 
         return f"""### ♟️ Strategic & Positional Analysis
 

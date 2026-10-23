@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=2.6">
+    <link rel="stylesheet" href="styles.css?v=2.8">
 </head>
 
 <body>
@@ -32,6 +32,7 @@
                     <span class="profile-elo-tag" id="header-profile-elo">1500 ELO</span>
                 </div>
                 <button class="btn btn-sm btn-accent" id="header-btn-analytics" style="padding:4px 10px; font-size:12px; font-weight:600; border:1px solid #eab308; background:#854d0e; color:#fef08a; cursor:pointer;" title="Open Advanced Profile Analytics & Adaptive Exercises">📊 Advanced Analytics</button>
+                <button class="btn btn-sm btn-primary" id="header-btn-baby-drills" onclick="window.openBabyStepDrillsQuickCatalog && window.openBabyStepDrillsQuickCatalog()" style="padding:4px 10px; font-size:12px; font-weight:600; border:1px solid #6366f1; background:#4f46e5; color:#fff; cursor:pointer;" title="Open Tactical Baby-Step Drills Catalog">🎯 Baby-Step Drills</button>
 
                 <div class="status-badge" id="engine-status-badge">
                     <span class="status-dot green"></span>
@@ -216,6 +217,32 @@
                                 <span class="btn-content-label" id="label-analyze-mentor-seq">📚 Mentor Seq (0)</span>
                             </button>
                         </div>
+
+                        <!-- 🔍 Multi-Dimensional History Filter Toolbar -->
+                        <div id="profile-history-filter-toolbar" style="margin-top:8px; padding:8px; background:#141417; border:1px solid #27272a; border-radius:6px; display:flex; flex-direction:column; gap:6px;">
+                            <div style="display:flex; gap:6px; align-items:center;">
+                                <input type="text" id="history-filter-search" list="history-filter-datalist" placeholder="🔎 Search opening (e.g. London, Ruy Lopez), motif, SAN..." style="flex:1; background:#1c1c20; border:1px solid #3f3f46; color:#e4e4e7; font-size:11px; padding:4px 8px; border-radius:4px; outline:none;" />
+                                <datalist id="history-filter-datalist"></datalist>
+                                <button id="btn-history-filter-clear" title="Clear Filters" style="background:#27272a; border:1px solid #3f3f46; color:#a1a1aa; font-size:10px; padding:4px 7px; border-radius:4px; cursor:pointer;">✕</button>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                                <select id="history-filter-quality" style="background:#1c1c20; border:1px solid #3f3f46; color:#e4e4e7; font-size:10px; padding:3px 6px; border-radius:4px; outline:none;">
+                                    <option value="">All Qualities</option>
+                                    <option value="Blunder">💥 Grievous / Blunders</option>
+                                    <option value="Mistake">⚠️ Mistakes</option>
+                                    <option value="Inaccuracy">⚡ Inaccuracies</option>
+                                    <option value="Good">👍 Good Moves</option>
+                                    <option value="Best">⭐ Best Moves</option>
+                                    <option value="Book">📖 Book Moves</option>
+                                </select>
+                                <select id="history-filter-motif" style="background:#1c1c20; border:1px solid #3f3f46; color:#e4e4e7; font-size:10px; padding:3px 6px; border-radius:4px; outline:none;">
+                                    <option value="">All Motifs</option>
+                                </select>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#a1a1aa; padding-top:2px;">
+                                <span id="history-filter-status">Showing all games</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Split Container: For Normal Profile = Full Games Tree; For QA = Split Pane 1 (Games) & Pane 2 (Raw JSON) -->
@@ -265,10 +292,25 @@
                     <!-- Top Clock Bar (Opponent / Top Player side) -->
                     <div id="top-clock-bar" class="clock-bar-row"></div>
 
-                    <!-- Interactive Move Replay Banner -->
-                    <div id="move-replay-banner" class="move-replay-banner hidden" style="display:flex; justify-content:space-between; align-items:center; background:linear-gradient(135deg, #2c3e50, #34495e); border:1px solid #4a6984; color:#fff; padding:6px 14px; border-radius:8px; margin-bottom:8px; font-size:12px; font-weight:600;">
-                        <span id="replay-banner-text">📜 Viewing Move #1 (1. e4)</span>
-                        <button class="btn btn-xs btn-accent" id="btn-return-live-game" style="font-size:11px; padding:2px 8px;">➡️ Return to Live Game</button>
+                    <!-- Interactive Move Replay Banner & Tactical Visualization Layer HUD -->
+                    <div id="move-replay-banner" class="move-replay-banner hidden" style="background:linear-gradient(135deg, #1e293b, #0f172a); border:1px solid #334155; color:#fff; padding:8px 12px; border-radius:8px; margin-bottom:8px; font-size:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+                        <div class="replay-banner-container">
+                            <div class="replay-banner-main-row">
+                                <div class="replay-banner-info">
+                                    <span id="replay-banner-text">📜 Viewing Move #1 (1. e4)</span>
+                                    <div id="replay-motifs-container" style="display:inline-flex; gap:4px; align-items:center;"></div>
+                                </div>
+                                <div class="replay-banner-actions">
+                                    <button class="btn btn-xs btn-secondary" id="btn-toggle-tactical-layer" style="font-size:11px; padding:2px 8px; display:inline-flex; align-items:center; gap:4px;">👁️ Tactical Layer: ON</button>
+                                    <button class="btn btn-xs btn-primary hidden" id="btn-replay-practice-drill" style="font-size:11px; padding:2px 8px; display:inline-flex; align-items:center; gap:4px; background:#4f46e5; border-color:#6366f1;">🎯 Drill</button>
+                                    <button class="btn btn-xs btn-accent" id="btn-return-live-game" style="font-size:11px; padding:2px 8px;">➡️ Return to Live Game</button>
+                                </div>
+                            </div>
+                            <div id="replay-forced-chain-row" class="replay-banner-stepper-row hidden">
+                                <span class="replay-stepper-label">⚡ Refutation Line:</span>
+                                <div id="replay-stepper-buttons" style="display:inline-flex; gap:4px; align-items:center;"></div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Piece Palette Bar (Visible only during Edit Board mode) -->
@@ -1646,7 +1688,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=2.6"></script>
+    <script src="app.js?v=5.1"></script>
 
     <!-- Enhanced Profile Analytics & Adaptive Exercise Suite Modal -->
     <div id="enhanced-analytics-modal" class="modal-overlay hidden">

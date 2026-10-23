@@ -12,6 +12,7 @@ class ChessEngineManager:
 
     def __init__(self, stockfish_path: str = ""):
         self.stockfish_path = stockfish_path or STOCKFISH_PATH
+        self._resolved_engine_path: Optional[str] = None
         self._engine: Optional[chess.engine.SimpleEngine] = None
         self._review_cache: Dict[Any, Dict[str, Any]] = {}
         self._init_local_engine()
@@ -43,6 +44,7 @@ class ChessEngineManager:
             if os.path.exists(path) or (os.name == 'posix' and os.access(path, os.X_OK)):
                 try:
                     self._engine = chess.engine.SimpleEngine.popen_uci(path)
+                    self._resolved_engine_path = path
                     # The engine's I/O thread is non-daemon; quit it before the interpreter waits on it.
                     try:
                         import threading
@@ -56,21 +58,45 @@ class ChessEngineManager:
         
         print("[EngineManager] Local Stockfish binary not found. Will use Cloud/Heuristic evaluation.")
 
+    def _ensure_engine(self) -> Optional[chess.engine.SimpleEngine]:
+        """Ensures the local Stockfish engine is alive; restarts it if it terminated."""
+        if self._engine:
+            try:
+                # Check if underlying subprocess is still alive
+                proc = self._engine.transport.get_extra_info("subprocess")
+                if proc and proc.poll() is not None:
+                    # Process died
+                    self._engine = None
+            except Exception:
+                self._engine = None
+
+        if self._engine is None and self._resolved_engine_path and os.path.exists(self._resolved_engine_path):
+            try:
+                self._engine = chess.engine.SimpleEngine.popen_uci(self._resolved_engine_path)
+                print(f"[EngineManager] Successfully reconnected to local Stockfish at: {self._resolved_engine_path}")
+            except Exception as e:
+                print(f"[EngineManager] Failed to restart local Stockfish: {e}")
+                self._engine = None
+
+        return self._engine
+
     def close(self):
         if self._engine:
             try:
                 self._engine.quit()
             except Exception:
                 pass
+            self._engine = None
 
     async def evaluate_position(self, board: chess.Board, depth: int = 14) -> Dict[str, Any]:
         """
         Calculates evaluation (centipawns or mate), top 3 candidate moves, and recommended line.
         """
-        # 1. Try Local Stockfish
-        if self._engine:
+        # 1. Try Local Stockfish (only if board is legally valid; UCI engines crash on illegal positions)
+        engine = self._ensure_engine()
+        if engine and board.is_valid():
             try:
-                info = self._engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+                info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
                 best_line = info[0] if isinstance(info, list) else info
                 score_obj = best_line["score"].white()
 
@@ -140,20 +166,26 @@ class ChessEngineManager:
                           "depth": depth, "source": "rules"}
             else:
                 result = {"cp": 0, "mate": None, "best_move": None, "depth": depth, "source": "rules"}
-        elif self._engine:
-            try:
-                info = self._engine.analyse(board, chess.engine.Limit(depth=depth))
-                score = info["score"].white()
-                pv = info.get("pv") or []
-                result = {
-                    "cp": None if score.is_mate() else score.score(),
-                    "mate": score.mate() if score.is_mate() else None,
-                    "best_move": pv[0].uci() if pv else None,
-                    "depth": info.get("depth", depth),
-                    "source": "local_stockfish",
-                }
-            except Exception as e:
-                print(f"[EngineManager] Review analysis failed: {e}")
+        elif not board.is_valid():
+            # Board position is illegal (e.g. opposite check or impossible king/pawn setup).
+            # Do NOT pass to UCI engine as it terminates the process.
+            print(f"[EngineManager] Skipping Stockfish analysis for invalid position: {board.fen()}")
+        else:
+            engine = self._ensure_engine()
+            if engine:
+                try:
+                    info = engine.analyse(board, chess.engine.Limit(depth=depth))
+                    score = info["score"].white()
+                    pv = info.get("pv") or []
+                    result = {
+                        "cp": None if score.is_mate() else score.score(),
+                        "mate": score.mate() if score.is_mate() else None,
+                        "best_move": pv[0].uci() if pv else None,
+                        "depth": info.get("depth", depth),
+                        "source": "local_stockfish",
+                    }
+                except Exception as e:
+                    print(f"[EngineManager] Review analysis failed: {e}")
         if result is None:
             cloud = await self._fetch_cloud_eval(board.fen())
             if cloud:
@@ -177,11 +209,12 @@ class ChessEngineManager:
         skill_level = max(0, min(20, skill_level))
         effective_elo = int(target_elo) if (target_elo is not None) else (400 + skill_level * 100)
 
-        if self._engine:
+        engine = self._ensure_engine()
+        if engine and board.is_valid():
             try:
                 if effective_elo >= 1320:
                     bounded_elo = min(3190, effective_elo)
-                    self._engine.configure({
+                    engine.configure({
                         "UCI_LimitStrength": True,
                         "UCI_Elo": bounded_elo,
                         "Skill Level": skill_level
@@ -189,26 +222,40 @@ class ChessEngineManager:
                     limit = chess.engine.Limit(time=0.25)
                 else:
                     # Low ELO (e.g. 400 - 1300): Limit strength + shallow depth limit
-                    self._engine.configure({
+                    engine.configure({
                         "UCI_LimitStrength": True,
                         "UCI_Elo": 1320,
                         "Skill Level": max(0, skill_level)
                     })
                     limit = chess.engine.Limit(depth=1, time=0.08)
 
-                result = self._engine.play(board, limit)
+                result = engine.play(board, limit)
                 move = result.move
 
-                # For low ELO (like 400), introduce realistic human mistake frequency
-                if effective_elo <= 800:
+                # For beginner & intermediate ELO (< 1300), introduce realistic human mistake frequency
+                if effective_elo < 1300:
                     legal_moves = list(board.legal_moves)
                     if len(legal_moves) > 1:
                         import random
-                        prob_mistake = 0.60 if effective_elo <= 500 else 0.35
+                        # Graduated blunder / inaccuracy probability curve:
+                        # <= 600: 55%, 601-800: 35%, 801-1000: 22%, 1001-1200: 12%, 1201-1299: 6%
+                        if effective_elo <= 600:
+                            prob_mistake = 0.55
+                        elif effective_elo <= 800:
+                            prob_mistake = 0.35
+                        elif effective_elo <= 1000:
+                            prob_mistake = 0.22
+                        elif effective_elo <= 1200:
+                            prob_mistake = 0.12
+                        else:
+                            prob_mistake = 0.06
+
                         if random.random() < prob_mistake:
                             non_top = [m for m in legal_moves if m != move]
                             if non_top:
-                                move = random.choice(non_top[:min(4, len(non_top))])
+                                # At 850-1200, pick plausible alternatives; at lower ELO, pick more erratically
+                                pool_size = 6 if effective_elo >= 850 else 4
+                                move = random.choice(non_top[:min(pool_size, len(non_top))])
 
                 try:
                     self._engine.configure({"UCI_LimitStrength": False, "Skill Level": 20})

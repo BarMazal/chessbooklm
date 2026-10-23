@@ -242,11 +242,118 @@ class ChessTranslator:
         }
 
     @classmethod
+    def analyze_tactical_difference(
+        cls, 
+        fen_before: str, 
+        move_played_san: str, 
+        best_move_san: str
+    ) -> Dict[str, Any]:
+        """
+        Calculates concrete tactical causes:
+        - Why the played move was flawed (relinquished control, retreated off 7th rank, allowed counter-play).
+        - Why the best move is strong (multiple attack/fork, pins, checks, attacks high-value targets, 7th rank infiltration).
+        """
+        try:
+            b = chess.Board(fen_before)
+            opp_color = not b.turn
+            opp_turn_name = "White" if b.turn == chess.BLACK else "Black"
+            turn_name = "White" if b.turn == chess.WHITE else "Black"
+
+            def resolve_move(san_or_uci):
+                try:
+                    return b.parse_san(san_or_uci)
+                except Exception:
+                    try:
+                        return chess.Move.from_uci(san_or_uci)
+                    except Exception:
+                        return None
+
+            mv_best = resolve_move(best_move_san)
+            mv_played = resolve_move(move_played_san)
+
+            best_points = []
+            played_points = []
+            moving_color = b.turn
+
+            if mv_best:
+                to_sq = mv_best.to_square
+                from_sq = mv_best.from_square
+                piece = b.piece_at(from_sq)
+                p_name = chess.piece_name(piece.piece_type).capitalize() if piece else "Piece"
+                to_sq_name = chess.square_name(to_sq)
+                to_rank = chess.square_rank(to_sq) + 1
+                is_seventh = (to_rank == 7 and moving_color == chess.WHITE) or (to_rank == 2 and moving_color == chess.BLACK)
+
+                b.push(mv_best)
+                direct_targets = []
+                for sq in b.attacks(to_sq):
+                    p = b.piece_at(sq)
+                    if p and p.color == opp_color:
+                        direct_targets.append(f"{chess.piece_name(p.piece_type).capitalize()} on {chess.square_name(sq)}")
+
+                is_check = b.is_check()
+                b.pop()
+
+                if len(direct_targets) >= 2:
+                    best_points.append(f"creates a double attack / fork targeting {direct_targets[0]} and {direct_targets[1]}")
+                elif len(direct_targets) == 1:
+                    best_points.append(f"directly attacks {direct_targets[0]}")
+
+                if is_seventh and p_name == "Rook":
+                    best_points.append("infiltrates the 7th/2nd rank, seizing absolute rook activity")
+                if is_check:
+                    best_points.append("delivers an immediate forcing check")
+
+            if mv_played:
+                from_sq = mv_played.from_square
+                to_sq = mv_played.to_square
+                piece = b.piece_at(from_sq)
+                p_name = chess.piece_name(piece.piece_type).capitalize() if piece else "Piece"
+                to_sq_name = chess.square_name(to_sq)
+                from_rank = chess.square_rank(from_sq) + 1
+                to_rank = chess.square_rank(to_sq) + 1
+                was_seventh = (from_rank == 7 and moving_color == chess.WHITE) or (from_rank == 2 and moving_color == chess.BLACK)
+                is_retreat = (to_rank < from_rank if moving_color == chess.WHITE else to_rank > from_rank)
+
+                if piece and piece.piece_type == chess.PAWN and chess.square_file(to_sq) in (0, 7):
+                    played_points.append(f"pushes a passive flank pawn ({to_sq_name}) in an open, tactical position, wasting a vital tempo")
+                elif was_seventh and (to_rank != from_rank):
+                    played_points.append(f"retreats the {p_name} off the active 7th/2nd rank, completely surrendering attacking momentum")
+                elif is_retreat and p_name in ("Rook", "Queen", "Knight", "Bishop"):
+                    played_points.append(f"retreats the {p_name} backwards to {to_sq_name}, relieving pressure on {opp_turn_name}'s camp")
+                else:
+                    played_points.append(f"moves the {p_name} to {to_sq_name}, missing the immediate tactical threat and allowing {opp_turn_name} to consolidate")
+
+                b.push(mv_played)
+                if b.is_checkmate():
+                    played_points.append("allows an immediate checkmate")
+                else:
+                    hanging = []
+                    for s, fp in b.piece_map().items():
+                        if fp.color == moving_color and b.is_attacked_by(opp_color, s) and not b.is_attacked_by(moving_color, s):
+                            hanging.append(f"{chess.piece_name(fp.piece_type).capitalize()} on {chess.square_name(s)}")
+                    if hanging:
+                        played_points.append(f"leaves friendly {hanging[0]} completely undefended under attack")
+                b.pop()
+
+            return {
+                "turn": turn_name,
+                "opponent": opp_turn_name,
+                "best_points": best_points,
+                "played_points": played_points
+            }
+        except Exception:
+            return {"turn": "Player", "opponent": "Opponent", "best_points": [], "played_points": []}
+
+    @classmethod
     def translate_position_to_human(
         cls, 
         board: chess.Board, 
         eval_data: Dict[str, Any],
-        user_question: Optional[str] = None
+        user_question: Optional[str] = None,
+        reviewed_move: Optional[Dict[str, Any]] = None,
+        candidate_evals: Optional[List[Dict[str, Any]]] = None,
+        chat_history: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """
         Converts board state and Stockfish analysis into a rich, natural language prompt.
@@ -306,16 +413,63 @@ class ChessTranslator:
 
         status_text = " ".join(status_lines)
 
-        # 4. Construct Structured Mentor Prompt
+        # 4. Construct Reviewed Move Line & Concrete Tactical Comparison if applicable
+        reviewed_section = ""
+        tactical_refutation_section = ""
+        if reviewed_move and reviewed_move.get("move_played"):
+            m_played = reviewed_move.get("move_played")
+            m_qual = reviewed_move.get("quality") or "Move"
+            m_best = reviewed_move.get("best_move") or ""
+            m_delta = reviewed_move.get("eval_delta")
+            m_motifs = reviewed_move.get("motifs") or []
+
+            delta_str = f" (eval drop: {m_delta:.2f})" if m_delta is not None else ""
+            best_str = f" Recommended best move was {m_best}." if m_best else ""
+            motifs_str = f" Tactical motifs: {', '.join(m_motifs)}." if m_motifs else ""
+
+            reviewed_section = f"\n- CURRENT REVIEWED MOVE: {m_played} was played and evaluated as a {m_qual.upper()}{delta_str}.{best_str}{motifs_str}"
+
+            if reviewed_move.get("fen_before") and m_best:
+                diff = cls.analyze_tactical_difference(reviewed_move["fen_before"], m_played, m_best)
+                b_pts = diff.get("best_points", [])
+                p_pts = diff.get("played_points", [])
+                diff_lines = []
+                if b_pts:
+                    diff_lines.append(f"  * Why {m_best} was decisive: {'; '.join(b_pts)}.")
+                if p_pts:
+                    diff_lines.append(f"  * What went wrong with {m_played}: {'; '.join(p_pts)}.")
+                if diff_lines:
+                    tactical_refutation_section = f"\n- CONCRETE TACTICAL COMPARISON:\n" + "\n".join(diff_lines)
+
+        # 5. Construct Candidate Moves section if user inquired about specific alternatives
+        candidates_section = ""
+        if candidate_evals:
+            cand_lines = [f"  * Move {c['san']}: Engine Evaluation {c['score']}" for c in candidate_evals]
+            candidates_section = f"\n- USER INQUIRED ALTERNATIVE CANDIDATE MOVES:\n" + "\n".join(cand_lines)
+
+        # 6. Construct Conversation History section if follow-up
+        history_section = ""
+        if chat_history and len(chat_history) > 0:
+            hist_lines = []
+            for item in chat_history:
+                r = item.get("role", "user")
+                prefix = "Student" if r == "user" else "Mentor"
+                txt = item.get("text", "").replace("\n", " ").strip()
+                if len(txt) > 300:
+                    txt = txt[:300] + "..."
+                hist_lines.append(f"{prefix}: \"{txt}\"")
+            history_section = f"\n\nPRIOR CONVERSATION HISTORY (BUILD UPON THIS, DO NOT REPEAT PREVIOUS TEXT VERBATIM):\n" + "\n".join(hist_lines)
+
+        # 7. Construct Structured Mentor Prompt
         prompt = f"""CHESS POSITION CONTEXT:
 - Active Turn: {turn} to move.
 - Identified Opening: {opening_name}
-- Stockfish Engine Evaluation: {eval_desc} (Raw Score: {score_str}).
+- Stockfish Engine Evaluation: {eval_desc} (Raw Score: {score_str}).{reviewed_section}{tactical_refutation_section}{candidates_section}
 - King & Tactical Status: {status_text}
 - Top Recommended Move by Engine: {best_move_desc}.
 
 BOARD FEN: {board.fen()}
-MOVE HISTORY: {' '.join([m.uci() for m in board.move_stack]) if board.move_stack else 'Starting Position'}
+MOVE HISTORY: {' '.join([m.uci() for m in board.move_stack]) if board.move_stack else 'Starting Position'}{history_section}
 
 USER QUERY / DISCUSSION ITEM:
 {user_question or f"Explain why Stockfish recommends {best_move_desc} for {turn}, what strategic themes exist in this {opening_name} position, and what main plans both sides should pursue."}

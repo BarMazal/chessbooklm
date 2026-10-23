@@ -2619,6 +2619,243 @@ input:checked + .slider:before {
     transform: translateY(0);
 }
 
+/* ========================================================
+   🎯 MOVE CLASSIFICATION TACTICAL VISUALIZATION LAYER
+   ======================================================== */
+.classification-highlight-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 6;
+    border-radius: 3px;
+    box-sizing: border-box;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.classification-highlight-layer.hanging {
+    border: 3px solid #ef4444;
+    box-shadow: inset 0 0 12px rgba(239, 68, 68, 0.55), 0 0 10px rgba(239, 68, 68, 0.45);
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.05) 70%, transparent 100%);
+}
+
+.classification-highlight-layer.fork-target {
+    border: 3px dashed #f59e0b;
+    box-shadow: inset 0 0 10px rgba(245, 158, 11, 0.5), 0 0 10px rgba(245, 158, 11, 0.4);
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.2) 0%, transparent 70%);
+}
+
+.classification-highlight-layer.threatened {
+    border: 2px dashed #ea580c;
+    box-shadow: inset 0 0 8px rgba(234, 88, 12, 0.4);
+}
+
+.classification-highlight-layer.pinned {
+    border: 3px solid #a855f7;
+    box-shadow: inset 0 0 12px rgba(168, 85, 247, 0.5), 0 0 8px rgba(168, 85, 247, 0.4);
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%);
+}
+
+.classification-highlight-layer.pin-axis {
+    border: 2px dashed rgba(168, 85, 247, 0.6);
+}
+
+.classification-highlight-layer.best-move {
+    border: 3px solid #10b981;
+    box-shadow: inset 0 0 12px rgba(16, 185, 129, 0.55), 0 0 10px rgba(16, 185, 129, 0.45);
+    background: radial-gradient(circle, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
+}
+
+.classification-highlight-layer.move-played {
+    border: 3px solid #ef4444;
+    box-shadow: inset 0 0 10px rgba(239, 68, 68, 0.45);
+}
+
+.classification-highlight-layer.back-rank {
+    border: 3px solid #e11d48;
+    box-shadow: inset 0 0 14px rgba(225, 29, 72, 0.6);
+    background: radial-gradient(circle, rgba(225, 29, 72, 0.25) 0%, transparent 70%);
+}
+
+.classification-ring-pulse {
+    animation: class-ring-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes class-ring-pulse {
+    0% { transform: scale(0.97); opacity: 0.75; }
+    50% { transform: scale(1.03); opacity: 1; }
+    100% { transform: scale(0.97); opacity: 0.75; }
+}
+
+.classification-badge-container {
+    position: absolute;
+    bottom: 3px;
+    left: 3px;
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    pointer-events: none;
+}
+
+.classification-badge {
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 1;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    padding: 2px 4px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+    color: #f1f5f9;
+}
+
+.classification-badge.badge-hanging {
+    border-color: #ef4444;
+    color: #fca5a5;
+    background: rgba(30, 10, 10, 0.94);
+}
+
+.classification-badge.badge-fork {
+    border-color: #f59e0b;
+    color: #fde68a;
+    background: rgba(35, 25, 10, 0.94);
+}
+
+.classification-badge.badge-pin {
+    border-color: #a855f7;
+    color: #e9d5ff;
+    background: rgba(30, 15, 45, 0.94);
+}
+
+.classification-badge.badge-best {
+    border-color: #10b981;
+    color: #6ee7b7;
+    background: rgba(10, 30, 20, 0.94);
+}
+
+.classification-badge.badge-played {
+    border-color: #f87171;
+    color: #fecaca;
+    background: rgba(35, 10, 10, 0.94);
+}
+
+/* Replay Banner Stepper & Tactical Layer HUD */
+.replay-banner-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.replay-banner-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.replay-banner-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+
+.replay-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.replay-banner-stepper-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(15, 23, 42, 0.65);
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.replay-stepper-label {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-right: 2px;
+}
+
+.replay-stepper-btn {
+    background: #334155;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.replay-stepper-btn:hover {
+    background: #475569;
+    border-color: #64748b;
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.replay-stepper-btn.active {
+    background: #4f46e5 !important;
+    border-color: #818cf8 !important;
+    color: #fff !important;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+}
+
+.tactical-motif-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    white-space: nowrap;
+}
+
+.tactical-motif-pill.pill-fork {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fde68a;
+}
+
+.tactical-motif-pill.pill-pin {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: rgba(168, 85, 247, 0.4);
+    color: #e9d5ff;
+}
+
+.tactical-motif-pill.pill-best {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+}
+
 /* Animated LLM Board Scanning Overlay */
 .board-llm-scanning-overlay {
     position: absolute;
@@ -3344,6 +3581,24 @@ input:checked + .slider:before {
     padding: 6px 8px;
 }
 
+/* Processing brain icon for move chips */
+.history-chip { position: relative; }
+.chip-brain-pulse {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(1);
+    font-size: 14px;
+    line-height: 1;
+    pointer-events: none;
+    z-index: 10;
+    animation: brainPulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes brainPulse {
+    0% { transform: translate(-50%, -50%) scale(0.7); }
+    100% { transform: translate(-50%, -50%) scale(1.35); }
+}
+
 /* History Font Scaling & Layout Isolation */
 :root {
     --history-font-scale: 1;
@@ -3516,4 +3771,47 @@ input:checked + .slider:before {
     50% { border-color: #60a5fa; }
     100% { border-color: #3b82f6; }
 }
+
+/* ==========================================================================
+   🔍 Multi-Dimensional Filter Highlights
+   ========================================================================== */
+.history-chip.filter-matched-chip {
+    border: 1.5px solid #38bdf8 !important;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.65) !important;
+    opacity: 1 !important;
+    filter: none !important;
+    font-weight: 700;
+    transform: scale(1.04);
+    z-index: 2;
+}
+
+.history-chip.filter-dimmed-chip {
+    opacity: 0.22 !important;
+    filter: grayscale(85%) !important;
+    pointer-events: auto;
+}
+
+/* ==========================================================================
+   🎯 Baby Steps Drill Dialog & Cards
+   ========================================================================== */
+.baby-step-card {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.baby-step-card:hover {
+    border-color: #6366f1;
+    transform: translateY(-1px);
+}
+
+.baby-step-card.stage-1 { border-left: 4px solid #10b981; }
+.baby-step-card.stage-2 { border-left: 4px solid #f59e0b; }
+.baby-step-card.stage-3 { border-left: 4px solid #ec4899; }
+
 

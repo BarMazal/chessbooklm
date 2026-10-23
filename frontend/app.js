@@ -944,6 +944,8 @@ function initTabs() {
     });
 }
 
+let draggedSquare = null;
+
 function initBoard() {
     chessboardEl.innerHTML = '';
     const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -977,6 +979,22 @@ function initBoard() {
             }
 
             squareEl.addEventListener('click', () => handleSquareClick(sqName));
+
+            squareEl.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+
+            squareEl.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const fromSq = e.dataTransfer.getData('text/plain') || draggedSquare;
+                if (fromSq && fromSq !== sqName) {
+                    selectedSquare = fromSq;
+                    handleSquareClick(sqName);
+                }
+                draggedSquare = null;
+            });
+
             chessboardEl.appendChild(squareEl);
         });
     });
@@ -1051,6 +1069,28 @@ function renderBoard() {
                 pieceEl.classList.add('piece');
                 pieceEl.setAttribute('data-piece-texture', gameSettings.pieceTexture || 'smooth');
                 pieceEl.setAttribute('data-piece-set', gameSettings.pieceSet || 'neo_classic');
+                pieceEl.setAttribute('draggable', 'true');
+                pieceEl.addEventListener('dragstart', (e) => {
+                    draggedSquare = sqName;
+                    e.dataTransfer.setData('text/plain', sqName);
+                    e.dataTransfer.effectAllowed = 'move';
+                    selectedSquare = sqName;
+                    renderBoard();
+                });
+                pieceEl.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                });
+                pieceEl.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const fromSq = e.dataTransfer.getData('text/plain') || draggedSquare;
+                    if (fromSq && fromSq !== sqName) {
+                        selectedSquare = fromSq;
+                        handleSquareClick(sqName);
+                    }
+                    draggedSquare = null;
+                });
                 sqEl.appendChild(pieceEl);
             }
         }
@@ -1059,12 +1099,16 @@ function renderBoard() {
     updateCheckStateUI(latestEvalData);
     drawBestMoveArrow();
     renderBoardOverlays(latestEvalData ? latestEvalData.overlays : null);
+    if (typeof renderClassificationSquareHighlights === 'function') {
+        renderClassificationSquareHighlights(activeClassificationVis);
+    }
 }
 
 function renderBoardOverlays(overlays) {
     document.querySelectorAll('.square-overlay-layer, .square-badge-container').forEach(el => el.remove());
     hideOverlayTooltip();
 
+    if (activeBabyStepDrill) return;
     if (!overlays || !Array.isArray(overlays) || overlays.length === 0) return;
 
     const sideFilter = document.getElementById('select-overlay-side-filter')?.value || 'all';
@@ -1284,8 +1328,370 @@ function updateCheckStateUI(data = null) {
     }
 }
 
+// ========================================================
+// 🎯 MOVE CLASSIFICATION TACTICAL VISUALIZATION LAYER
+// ========================================================
+let activeClassificationVis = null;
+let classificationLayerEnabled = true;
+
+function clearClassificationOverlays() {
+    document.querySelectorAll('.classification-highlight-layer, .classification-badge-container').forEach(el => el.remove());
+}
+
+function drawClassificationSvgArrows(activeVis) {
+    arrowsSvgEl.innerHTML = '';
+    if (!classificationLayerEnabled || !activeVis || !activeVis.data) return;
+
+    const boardRect = chessboardEl.getBoundingClientRect();
+    if (boardRect.width === 0 || boardRect.height === 0) return;
+
+    let arrowsToDraw = [];
+
+    // If viewing a step in the forced refutation chain (activeStep > 0)
+    if (activeVis.activeStep > 0 && activeVis.data.forced_chain) {
+        const step = activeVis.data.forced_chain[activeVis.activeStep - 1];
+        if (step && step.uci && step.uci.length >= 4) {
+            arrowsToDraw.push({
+                from: step.uci.slice(0, 2),
+                to: step.uci.slice(2, 4),
+                color: '#818cf8',
+                style: 'solid',
+                width: 7,
+                label: `Step ${step.ply}: ${step.san}`
+            });
+        }
+    } else {
+        // Step 0: Draw all tactical classification arrows for this move
+        arrowsToDraw = activeVis.data.arrows || [];
+    }
+
+    if (!arrowsToDraw.length) return;
+
+    // Collect unique colors to create SVG markers
+    const uniqueColors = [...new Set(arrowsToDraw.map(a => a.color || '#3b82f6'))];
+    let defsContent = '<defs>';
+    uniqueColors.forEach((col, idx) => {
+        const markerId = `class-arrowhead-${idx}`;
+        defsContent += `
+            <marker id="${markerId}" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+                <polygon points="0 0, 6 3, 0 6" fill="${col}" />
+            </marker>
+        `;
+    });
+    defsContent += '</defs>';
+
+    let linesContent = '';
+    arrowsToDraw.forEach(a => {
+        const fromEl = document.querySelector(`.square[data-square="${a.from}"]`);
+        const toEl = document.querySelector(`.square[data-square="${a.to}"]`);
+        if (!fromEl || !toEl) return;
+
+        const fR = fromEl.getBoundingClientRect();
+        const tR = toEl.getBoundingClientRect();
+        const x1 = fR.left - boardRect.left + fR.width / 2;
+        const y1 = fR.top - boardRect.top + fR.height / 2;
+        const x2 = tR.left - boardRect.left + tR.width / 2;
+        const y2 = tR.top - boardRect.top + tR.height / 2;
+
+        const col = a.color || '#3b82f6';
+        const colorIdx = uniqueColors.indexOf(col);
+        const markerId = `class-arrowhead-${colorIdx >= 0 ? colorIdx : 0}`;
+        const dashAttr = (a.style === 'dashed') ? 'stroke-dasharray="7,5"' : '';
+        const strokeW = a.width || 6;
+
+        linesContent += `
+            <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" 
+                  stroke="${col}" stroke-width="${strokeW}" stroke-linecap="round" 
+                  opacity="0.92" ${dashAttr} marker-end="url(#${markerId})" />
+        `;
+    });
+
+    arrowsSvgEl.innerHTML = defsContent + linesContent;
+}
+
+function renderClassificationSquareHighlights(activeVis) {
+    clearClassificationOverlays();
+    if (!classificationLayerEnabled || !activeVis || !activeVis.data) return;
+
+    // Highlights are shown for the base position (step 0)
+    if (activeVis.activeStep > 0) return;
+
+    const highlights = activeVis.data.highlights || [];
+    highlights.forEach(hl => {
+        const sqEl = document.querySelector(`.square[data-square="${hl.square}"]`);
+        if (!sqEl) return;
+
+        const layer = document.createElement('div');
+        layer.className = 'classification-highlight-layer';
+        if (hl.type === 'hanging_piece') {
+            layer.classList.add('hanging', 'classification-ring-pulse');
+        } else if (hl.type === 'fork_target') {
+            layer.classList.add('fork-target', 'classification-ring-pulse');
+        } else if (hl.type === 'threatened_target') {
+            layer.classList.add('threatened');
+        } else if (hl.type === 'pinned_piece') {
+            layer.classList.add('pinned');
+        } else if (hl.type === 'pin_axis') {
+            layer.classList.add('pin-axis');
+        } else if (hl.type === 'best_move') {
+            layer.classList.add('best-move');
+        } else if (hl.type === 'move_played') {
+            layer.classList.add('move-played');
+        } else if (hl.type === 'back_rank') {
+            layer.classList.add('back-rank', 'classification-ring-pulse');
+        }
+        sqEl.appendChild(layer);
+
+        if (hl.badge) {
+            let container = sqEl.querySelector('.classification-badge-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'classification-badge-container';
+                sqEl.appendChild(container);
+            }
+            const bEl = document.createElement('div');
+            bEl.className = 'classification-badge';
+            if (hl.type === 'hanging_piece') bEl.classList.add('badge-hanging');
+            else if (hl.type === 'fork_target' || hl.type === 'threatened_target') bEl.classList.add('badge-fork');
+            else if (hl.type === 'pinned_piece') bEl.classList.add('badge-pin');
+            else if (hl.type === 'best_move') bEl.classList.add('badge-best');
+            else if (hl.type === 'move_played') bEl.classList.add('badge-played');
+            bEl.textContent = hl.badge;
+            container.appendChild(bEl);
+        }
+    });
+}
+
+async function activateMoveClassificationVisualization(node, event) {
+    if (!node) return;
+
+    // Determine fen_before
+    let fenBefore = null;
+    if (node.parent_id && event && Array.isArray(event.moves)) {
+        const parentNode = event.moves.find(m => m.id === node.parent_id);
+        if (parentNode && parentNode.fen) {
+            fenBefore = parentNode.fen;
+        }
+    }
+    if (!fenBefore && event) {
+        fenBefore = event.startingFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    }
+
+    const eng = nodeEngine(node);
+    const mv = (node.analysis && (node.analysis.move || node.analysis.mentor_move)) || null;
+
+    let pvList = null;
+    if (eng && eng.pv) {
+        if (Array.isArray(eng.pv)) {
+            pvList = eng.pv;
+        } else if (typeof eng.pv === 'string') {
+            pvList = eng.pv.trim().split(/\s+/).filter(Boolean);
+        }
+    }
+
+    let vis = node._classificationVis;
+    if (!vis) {
+        try {
+            const res = await fetch('/api/analysis/visualize-classification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fen_before: fenBefore,
+                    fen_after: node.fen,
+                    move_uci: node.move_uci || '',
+                    best_move_uci: eng?.best_move_uci || null,
+                    quality: eng?.quality || null,
+                    primary_motif: mv?.primary_motif || null,
+                    motifs_against: mv?.motifs_against || null,
+                    motifs_for: mv?.motifs_for || null,
+                    pv_moves: pvList
+                })
+            });
+            if (res.ok) {
+                vis = await res.json();
+                node._classificationVis = vis;
+            }
+        } catch (err) {
+            console.error('[visualize-classification fetch error]', err);
+        }
+    }
+
+    activeClassificationVis = {
+        node,
+        event,
+        data: vis,
+        activeStep: 0
+    };
+
+    updateClassificationBannerHUD(activeClassificationVis);
+    renderBoard();
+}
+
+function updateClassificationBannerHUD(activeVis) {
+    const banner = document.getElementById('move-replay-banner');
+    if (!banner || !activeVis) return;
+    banner.classList.remove('hidden');
+
+    const node = activeVis.node;
+    const ev = activeVis.event;
+    const vis = activeVis.data || {};
+    const eng = nodeEngine(node);
+    const qColor = { Blunder: '#ef4444', Mistake: '#f97316', Inaccuracy: '#eab308', Best: '#22c55e', Good: '#86efac', Book: '#a5b4fc' };
+    const quality = eng?.quality || vis.quality || 'Move';
+
+    const bannerText = document.getElementById('replay-banner-text');
+    if (bannerText) {
+        const qBadge = `<span style="background:${qColor[quality] || '#64748b'}; color:#fff; padding:1px 6px; border-radius:3px; font-weight:700; margin-right:4px;">${escapeHtml(quality)}</span>`;
+        bannerText.innerHTML = `${qBadge} <strong>${node.move_number}.${node.color === 'b' ? '..' : ''} ${escapeHtml(node.move_san || node.move_uci)}</strong> <span style="color:#94a3b8; font-size:11px;">(${escapeHtml(ev.title || 'Game')})</span>`;
+    }
+
+    // Motifs tags container
+    const motifsContainer = document.getElementById('replay-motifs-container');
+    if (motifsContainer) {
+        motifsContainer.innerHTML = '';
+        const motifs = vis.motifs || [];
+        motifs.forEach(m => {
+            const pill = document.createElement('span');
+            pill.className = 'tactical-motif-pill';
+            if (m.id === 'fork') pill.classList.add('pill-fork');
+            else if (m.id === 'pin') pill.classList.add('pill-pin');
+            else if (m.id === 'best') pill.classList.add('pill-best');
+            pill.textContent = m.title;
+            pill.title = m.detail || m.title;
+            motifsContainer.appendChild(pill);
+        });
+    }
+
+    // Practice Drill button
+    const btnDrill = document.getElementById('btn-replay-practice-drill');
+    if (btnDrill) {
+        const isTactical = ['Blunder', 'Mistake'].includes(quality) || (vis.motifs && vis.motifs.length > 0);
+        if (isTactical) {
+            btnDrill.classList.remove('hidden');
+            btnDrill.onclick = () => startBabyStepDrillFlow(node, ev);
+        } else {
+            btnDrill.classList.add('hidden');
+        }
+    }
+
+    // Tactical Layer toggle button
+    const btnToggle = document.getElementById('btn-toggle-tactical-layer');
+    if (btnToggle) {
+        btnToggle.textContent = classificationLayerEnabled ? '👁️ Tactical Layer: ON' : '👁️ Tactical Layer: OFF';
+        btnToggle.classList.toggle('btn-secondary', classificationLayerEnabled);
+        btnToggle.classList.toggle('btn-accent', !classificationLayerEnabled);
+    }
+
+    // Refutation Chain Stepper
+    const chainRow = document.getElementById('replay-forced-chain-row');
+    const stepperButtons = document.getElementById('replay-stepper-buttons');
+    if (chainRow && stepperButtons) {
+        const chain = vis.forced_chain || [];
+        if (chain.length > 0) {
+            chainRow.classList.remove('hidden');
+            stepperButtons.innerHTML = '';
+
+            // Step 0: Move Played
+            const b0 = document.createElement('button');
+            b0.className = `replay-stepper-btn ${activeVis.activeStep === 0 ? 'active' : ''}`;
+            b0.innerHTML = `⏮️ ${escapeHtml(node.move_san || 'Move Played')}`;
+            b0.onclick = () => selectForcedChainStep(0);
+            stepperButtons.appendChild(b0);
+
+            // Steps 1..N
+            chain.forEach(step => {
+                const bStep = document.createElement('button');
+                bStep.className = `replay-stepper-btn ${activeVis.activeStep === step.ply ? 'active' : ''}`;
+                const turnIcon = step.color === 'w' ? '⚪' : '⚫';
+                bStep.innerHTML = `${turnIcon} Step ${step.ply}: ${escapeHtml(step.san)}`;
+                bStep.onclick = () => selectForcedChainStep(step.ply);
+                stepperButtons.appendChild(bStep);
+            });
+        } else {
+            chainRow.classList.add('hidden');
+        }
+    }
+}
+
+function selectForcedChainStep(stepPly) {
+    if (!activeClassificationVis || !activeClassificationVis.data) return;
+    activeClassificationVis.activeStep = stepPly;
+
+    if (!activeClassificationVis.baseMoves) {
+        activeClassificationVis.baseMoves = [...moveHistory];
+    }
+
+    if (stepPly === 0) {
+        currentFen = activeClassificationVis.node.fen;
+        moveHistory = [...activeClassificationVis.baseMoves];
+        if (activeClassificationVis.node.move_uci && activeClassificationVis.node.move_uci.length >= 4) {
+            lastMoveSquares = [activeClassificationVis.node.move_uci.slice(0, 2), activeClassificationVis.node.move_uci.slice(2, 4)];
+        }
+    } else {
+        const step = activeClassificationVis.data.forced_chain[stepPly - 1];
+        if (step) {
+            currentFen = step.fen_after;
+            const chainSlice = activeClassificationVis.data.forced_chain.slice(0, stepPly).map(s => s.san);
+            moveHistory = [...activeClassificationVis.baseMoves, ...chainSlice];
+            if (step.uci && step.uci.length >= 4) {
+                lastMoveSquares = [step.uci.slice(0, 2), step.uci.slice(2, 4)];
+            }
+        }
+    }
+    parseFenToState(currentFen);
+    renderBoard();
+    renderMoveHistoryTable();
+
+    const fenInput = document.getElementById('fen-input-text');
+    if (fenInput) fenInput.value = currentFen;
+    if (typeof generateCurrentPgnText === 'function') generateCurrentPgnText();
+    updatePositionEvaluation(currentFen, []);
+
+    updateClassificationBannerHUD(activeClassificationVis);
+}
+
 function drawBestMoveArrow() {
     arrowsSvgEl.innerHTML = '';
+
+    if (classificationLayerEnabled && activeClassificationVis && activeClassificationVis.data) {
+        drawClassificationSvgArrows(activeClassificationVis);
+        return;
+    }
+
+    if (activeBabyStepDrill && activeBabyStepDrill.solved) {
+        if (activeBabyStepDrill.stage && activeBabyStepDrill.stage.best_move_uci === 'd5f6') {
+            const arrowList = [
+                { from: 'f6', to: 'e8', color: '#10b981' },
+                { from: 'f6', to: 'd7', color: '#f59e0b' }
+            ];
+            const boardRect = chessboardEl.getBoundingClientRect();
+            let svgContent = `<defs>
+                <marker id="arrow-green" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+                    <polygon points="0 0, 6 3, 0 6" fill="#10b981" />
+                </marker>
+                <marker id="arrow-gold" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
+                    <polygon points="0 0, 6 3, 0 6" fill="#f59e0b" />
+                </marker>
+            </defs>`;
+            arrowList.forEach(a => {
+                const fromEl = document.querySelector(`.square[data-square="${a.from}"]`);
+                const toEl = document.querySelector(`.square[data-square="${a.to}"]`);
+                if (fromEl && toEl) {
+                    const fR = fromEl.getBoundingClientRect();
+                    const tR = toEl.getBoundingClientRect();
+                    const x1 = fR.left - boardRect.left + fR.width / 2;
+                    const y1 = fR.top - boardRect.top + fR.height / 2;
+                    const x2 = tR.left - boardRect.left + tR.width / 2;
+                    const y2 = tR.top - boardRect.top + tR.height / 2;
+                    const marker = a.color === '#10b981' ? 'arrow-green' : 'arrow-gold';
+                    svgContent += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${a.color}" stroke-width="6" stroke-linecap="round" opacity="0.9" marker-end="url(#${marker})" />`;
+                }
+            });
+            arrowsSvgEl.innerHTML = svgContent;
+            return;
+        }
+    }
+
     if (!bestMoveArrow || bestMoveArrow.length < 4) return;
 
     const activeColor = currentFen.split(' ')[1]; // 'w' or 'b'
@@ -1333,7 +1739,7 @@ function handleSquareClick(sqName) {
     const activeTurnColor = currentFen.split(' ')[1]; // 'w' or 'b'
     const isWhiteAuto = (activeTurnColor === 'w' && gameSettings.whitePlayerMode === 'auto');
     const isBlackAuto = (activeTurnColor === 'b' && gameSettings.blackPlayerMode === 'auto');
-    if (isWhiteAuto || isBlackAuto) return;
+    if (!activeBabyStepDrill && (isWhiteAuto || isBlackAuto)) return;
 
     if (selectedSquare) {
         if (selectedSquare === sqName) {
@@ -1352,6 +1758,19 @@ function handleSquareClick(sqName) {
                 executeMove(matchingMoves[0].san, matchingMoves[0].uci);
                 selectedSquare = null;
                 return;
+            }
+        } else if (activeBabyStepDrill && activeBabyStepDrill.stage.best_move_uci === 'd5f6' && selectedSquare === 'd5' && sqName === 'd6') {
+            showGameToast(`💡 Knights move in an "L" shape (they cannot move 1 square straight forward). Leap from d5 to <strong>f6</strong> (1. Nf6+) to deliver the fork!`, 6500);
+        } else if (selectedSquare && selectedSquare !== sqName) {
+            if (boardState[sqName] && boardState[sqName].startsWith(activeTurnColor)) {
+                selectedSquare = sqName;
+                renderBoard();
+                return;
+            }
+            if (activeBabyStepDrill) {
+                const targetUci = activeBabyStepDrill.stage.best_move_uci;
+                const toSq = targetUci ? targetUci.slice(2, 4) : '';
+                showGameToast(`💡 That move is not the winning tactic. Try moving to <strong>${toSq || activeBabyStepDrill.stage.best_move_san}</strong> (${activeBabyStepDrill.stage.best_move_san})!`, 4000);
             }
         }
     }
@@ -1449,13 +1868,25 @@ async function executeMove(sanMove, uciMove) {
         overrideShowHintForCurrentMove = false;
         hasDeclaredGameOver = false;
         selectedHistoryMoveIndex = -1;
-        const bannerEl = document.getElementById('move-replay-banner');
-        if (bannerEl) bannerEl.classList.add('hidden');
+        if (!activeBabyStepDrill) {
+            const bannerEl = document.getElementById('move-replay-banner');
+            if (bannerEl) bannerEl.classList.add('hidden');
+        }
 
         const previousTurnColor = currentFen.split(' ')[1] || 'w';
         moveHistory.push(sanMove);
         moveStackUci.push(uciMove);
         lastMoveSquares = [uciMove.slice(0, 2), uciMove.slice(2, 4)];
+
+        // Instant optimistic visual update so the piece moves immediately on screen:
+        const fromSq = uciMove.slice(0, 2);
+        const toSq = uciMove.slice(2, 4);
+        if (boardState[fromSq]) {
+            boardState[toSq] = boardState[fromSq];
+            delete boardState[fromSq];
+            selectedSquare = null;
+            renderBoard();
+        }
 
         if (isAutoPaused) {
             isAutoPaused = false;
@@ -1463,8 +1894,120 @@ async function executeMove(sanMove, uciMove) {
         }
 
         await updatePositionEvaluation();
+
+        if (activeBabyStepDrill && moveHistory.length > 0) {
+            const seq = activeBabyStepDrill.sequence || (activeBabyStepDrill.stage.best_move_uci ? [activeBabyStepDrill.stage.best_move_uci] : []);
+            const seqIdx = activeBabyStepDrill.stepIndexInSequence || 0;
+            const expectedUci = seq[seqIdx];
+
+            // Did the student just make this move, or did the opponent make it?
+            const currentTurnBeforeMove = previousTurnColor;
+            const isStudentMove = (currentTurnBeforeMove === activeBabyStepDrill.drillTurn);
+
+            if (isStudentMove) {
+                const isCorrect = (uciMove === expectedUci || (expectedUci && uciMove.slice(2, 4) === expectedUci.slice(2, 4) && (sanMove.includes('x') || sanMove.startsWith('Q') || sanMove.startsWith('R'))));
+
+                const bannerText = document.getElementById('replay-banner-text');
+                if (isCorrect) {
+                    activeBabyStepDrill.stepIndexInSequence = seqIdx + 1;
+                    const nextSeqIdx = activeBabyStepDrill.stepIndexInSequence;
+
+                    // If sequence is fully finished:
+                    if (nextSeqIdx >= seq.length) {
+                        activeBabyStepDrill.solved = true;
+                        const nextStageIdx = activeBabyStepDrill.stageIndex + 1;
+                        const hasNextStage = nextStageIdx < activeBabyStepDrill.stages.length;
+                        showGameToast(`🎉 <strong>Brilliant! Tactical combination complete!</strong>`, 7000);
+                        if (bannerText) {
+                            const totalRiddles = (activeBabyStepDrill.stage.riddles || []).length || activeBabyStepDrill.stage.total_riddles || 1;
+                            const rIdx = activeBabyStepDrill.riddleIndex || 0;
+                            const hasNextRiddle = rIdx < totalRiddles - 1;
+                            bannerText.innerHTML = `✅ <strong>Riddle ${rIdx + 1}/${totalRiddles} Solved!</strong> (${sanMove}) 
+                                ${hasNextRiddle ? `<button id="btn-next-riddle-solved" class="btn btn-xs btn-primary" style="margin-left:10px; font-size:11px; padding:3px 10px; background:#10b981; border:none; cursor:pointer; font-weight:700;">▶️ Next Riddle (${rIdx + 2}/${totalRiddles})</button>` : ''}
+                                ${hasNextStage ? `<button id="btn-next-baby-step" class="btn btn-xs btn-primary" style="margin-left:8px; font-size:11px; padding:3px 10px; background:#6366f1; border:none; cursor:pointer; font-weight:700;">Level ${nextStageIdx + 1} ➔</button>` : '<span style="color:#4ade80; margin-left:8px; font-weight:700;">🏆 Level Completed!</span>'}
+                                <button id="btn-gen-riddle-solved" class="btn btn-xs btn-primary" style="margin-left:8px; font-size:11px; padding:3px 10px; background:#8b5cf6; border:none; cursor:pointer; font-weight:700;">✨ Generate New</button>
+                                <button id="btn-reset-baby-step-solved" class="btn btn-xs btn-secondary" style="margin-left:8px; font-size:11px; padding:3px 8px; cursor:pointer;">🔄 Reset Position</button>`;
+                            const btnNextRiddle = document.getElementById('btn-next-riddle-solved');
+                            if (btnNextRiddle) {
+                                btnNextRiddle.onclick = () => {
+                                    loadBabyStepDrillStage(activeBabyStepDrill.data, activeBabyStepDrill.sourceNode, activeBabyStepDrill.sourceEv, activeBabyStepDrill.stageIndex, rIdx + 1);
+                                };
+                            }
+                            const btnNext = document.getElementById('btn-next-baby-step');
+                            if (btnNext) {
+                                btnNext.onclick = () => {
+                                    loadBabyStepDrillStage(activeBabyStepDrill.data, activeBabyStepDrill.sourceNode, activeBabyStepDrill.sourceEv, nextStageIdx, 0);
+                                };
+                            }
+                            const btnGen = document.getElementById('btn-gen-riddle-solved');
+                            if (btnGen) {
+                                btnGen.onclick = async () => {
+                                    const st = activeBabyStepDrill.stage;
+                                    showGameToast(`✨ Generating new Level ${st.step} riddle...`, 2000);
+                                    try {
+                                        const resp = await fetch('/api/drills/generate-level-riddle', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                motif_id: activeBabyStepDrill.data?.motif_id || 'fork',
+                                                level: st.step || (activeBabyStepDrill.stageIndex + 1),
+                                                exclude_ids: (st.riddles || []).map(r => r.id)
+                                            })
+                                        });
+                                        const res = await resp.json();
+                                        if (res && res.riddle) {
+                                            if (!st.riddles) st.riddles = [];
+                                            st.riddles.push(res.riddle);
+                                            st.total_riddles = st.riddles.length;
+                                            await loadBabyStepDrillStage(activeBabyStepDrill.data, activeBabyStepDrill.sourceNode, activeBabyStepDrill.sourceEv, activeBabyStepDrill.stageIndex, st.riddles.length - 1);
+                                            showGameToast(`🎉 Generated & Loaded: <strong>${escapeHtml(res.riddle.title)}</strong>!`, 3500);
+                                        }
+                                    } catch (e) {
+                                        showGameToast(`⚠️ Failed to generate: ${e.message}`);
+                                    }
+                                };
+                            }
+                            const btnReset = document.getElementById('btn-reset-baby-step-solved');
+                            if (btnReset) {
+                                btnReset.onclick = () => {
+                                    loadBabyStepDrillStage(activeBabyStepDrill.data, activeBabyStepDrill.sourceNode, activeBabyStepDrill.sourceEv, activeBabyStepDrill.stageIndex, rIdx);
+                                };
+                            }
+                        }
+                        drawBestMoveArrow();
+                    } else {
+                        // The opponent has a scripted reply next!
+                        const oppUci = seq[nextSeqIdx];
+                        showGameToast(`🎯 <strong>Good move!</strong> Opponent is responding...`, 2000);
+                        setTimeout(() => {
+                            if (!activeBabyStepDrill) return;
+                            const oppMatching = legalMoves.find(m => m.uci === oppUci);
+                            activeBabyStepDrill.stepIndexInSequence = nextSeqIdx + 1;
+                            if (oppMatching) {
+                                executeMove(oppMatching.san, oppMatching.uci);
+                            } else if (oppUci && oppUci.length >= 4) {
+                                executeMove(oppUci, oppUci);
+                            }
+                            showGameToast(`🎯 <strong>Your turn:</strong> Finish the tactical sequence!`, 5000);
+                        }, 500);
+                    }
+                } else {
+                    let failExplanation = `❌ <strong>Not quite!</strong> ${sanMove} does not continue the winning tactical line.`;
+                    showGameToast(failExplanation, 7000);
+                    if (bannerText) {
+                        bannerText.innerHTML = `${failExplanation} <button id="btn-reset-baby-step-fail" class="btn btn-xs btn-warning" style="margin-left:12px; font-size:11px; padding:3px 10px; background:#f59e0b; color:#18181b; border:none; cursor:pointer; font-weight:700;">🔄 Try Again / Reset</button>`;
+                        const btnReset = document.getElementById('btn-reset-baby-step-fail');
+                        if (btnReset) {
+                            btnReset.onclick = () => {
+                                loadBabyStepDrillStage(activeBabyStepDrill.data, activeBabyStepDrill.sourceNode, activeBabyStepDrill.sourceEv, activeBabyStepDrill.stageIndex);
+                            };
+                        }
+                    }
+                }
+            }
+        }
         onMoveExecutedClockTick(previousTurnColor);
-        if (typeof recordLiveMoveToActiveEvent === 'function') {
+        if (!activeBabyStepDrill && typeof recordLiveMoveToActiveEvent === 'function') {
             recordLiveMoveToActiveEvent(sanMove, uciMove, currentFen, latestEvalData ? latestEvalData.eval : null);
         }
         if (pendingGameOverOutcome) {
@@ -1498,7 +2041,18 @@ async function updatePositionEvaluation(evalFen, evalMoves) {
         const scoreStr = data.eval.score;
         summaryEvalEl.textContent = scoreStr;
         evalScoreBadgeEl.textContent = scoreStr;
-        summaryBestMoveEl.textContent = data.eval.best_move_san || '-';
+        if (summaryBestMoveEl) {
+            summaryBestMoveEl.textContent = data.eval.best_move_san || '-';
+            summaryBestMoveEl.style.cursor = 'pointer';
+            summaryBestMoveEl.title = `Click to play recommended move (${data.eval.best_move_san || ''})`;
+            summaryBestMoveEl.onclick = () => {
+                if (!bestMoveArrow || isExecutingMove) return;
+                const matching = legalMoves.find(m => m.uci === bestMoveArrow);
+                if (matching) {
+                    executeMove(matching.san, matching.uci);
+                }
+            };
+        }
         bestMoveArrow = data.eval.best_move;
 
         let whitePercentage = 50;
@@ -1513,7 +2067,16 @@ async function updatePositionEvaluation(evalFen, evalMoves) {
         engineLinesListEl.innerHTML = '';
         (data.eval.top_moves || []).forEach(m => {
             const li = document.createElement('li');
+            li.style.cursor = 'pointer';
+            li.title = `Click to play ${m.san}`;
             li.innerHTML = `<span class="move-san">${m.san}</span> <span class="move-score">${m.score || scoreStr}</span>`;
+            li.onclick = () => {
+                if (isExecutingMove) return;
+                const matching = legalMoves.find(lm => lm.san === m.san || lm.uci === m.uci);
+                if (matching) {
+                    executeMove(matching.san, matching.uci);
+                }
+            };
             engineLinesListEl.appendChild(li);
         });
 
@@ -1637,6 +2200,7 @@ async function viewHistoricalMove(moveIndex) {
         }
     }
 
+    snapshotLiveGameIfNeeded();
     selectedHistoryMoveIndex = moveIndex;
 
     const bannerEl = document.getElementById('move-replay-banner');
@@ -1678,16 +2242,13 @@ async function viewHistoricalMove(moveIndex) {
 
         renderMoveHistoryTable();
         renderBoard();
+
+        const fenInput = document.getElementById('fen-input-text');
+        if (fenInput) fenInput.value = currentFen;
+        if (typeof generateCurrentPgnText === 'function') generateCurrentPgnText();
     } catch (e) {
         console.error('Failed to evaluate historical move:', e);
     }
-}
-
-async function returnToLiveGame() {
-    selectedHistoryMoveIndex = -1;
-    const bannerEl = document.getElementById('move-replay-banner');
-    if (bannerEl) bannerEl.classList.add('hidden');
-    await updatePositionEvaluation();
 }
 
 function updateUndoButtonState() {
@@ -2197,6 +2758,7 @@ function updateDifficultyUIControls() {
 
 
 async function makeBotMove() {
+    if (activeBabyStepDrill) return;
     if (legalMoves.length === 0 || botMoveInFlight || isExecutingMove) return;
     botMoveInFlight = true;
     try {
@@ -2900,6 +3462,7 @@ function checkAndTriggerAutoMove() {
         autoMoveTimer = null;
     }
 
+    if (activeBabyStepDrill) return;
     if (!currentFen || legalMoves.length === 0) return;
     if (isAutoPaused || !isGameActive) return;
 
@@ -2973,22 +3536,36 @@ async function loadNotebooksList() {
             return;
         }
 
+        let targetNb = null;
+        if (currentNotebookId) {
+            targetNb = data.notebooks.find(n => n.id === currentNotebookId);
+        }
+        if (!targetNb) {
+            targetNb = data.notebooks.find(n => n.title.toLowerCase().includes('chess')) || data.notebooks[0];
+        }
+        if (targetNb) {
+            currentNotebookId = targetNb.id;
+        }
+
         data.notebooks.forEach(nb => {
             const opt = document.createElement('option');
             opt.value = nb.id;
             opt.textContent = `${nb.title} (${nb.id.slice(0, 8)}...)`;
-            if (nb.id === currentNotebookId || nb.is_active) {
+            if (nb.id === currentNotebookId) {
                 opt.selected = true;
-                currentNotebookId = nb.id;
             }
             mentorNotebookSelectEl.appendChild(opt);
         });
 
-        if (!currentNotebookId && mentorNotebookSelectEl.value) {
-            currentNotebookId = mentorNotebookSelectEl.value;
+        if (currentNotebookId) {
+            mentorNotebookSelectEl.value = currentNotebookId;
+            const settingEl = document.getElementById('setting-notebook-id');
+            if (settingEl) settingEl.value = currentNotebookId;
+            const tagEl = document.querySelector('.mentor-bubble .bubble-tag');
+            if (tagEl && tagEl.textContent.includes('Standby')) {
+                tagEl.textContent = 'NotebookLM Connected';
+            }
         }
-
-        document.getElementById('setting-notebook-id').value = currentNotebookId || "";
 
     } catch (e) {
         mentorNotebookSelectEl.innerHTML = '<option value="">Error loading notebooks</option>';
@@ -3165,7 +3742,10 @@ function setMentorChatFontSize(sizePx) {
     localStorage.setItem('chess_mentor_chat_font_px', px.toString());
 }
 
+let mentorConversationHistory = [];
+
 function clearMentorChatHistory() {
+    mentorConversationHistory = [];
     const chatBox = document.getElementById('mentor-chat-messages');
     if (!chatBox) return;
 
@@ -3187,6 +3767,9 @@ function clearMentorChatHistory() {
 }
 
 function appendUserChatBubble(text) {
+    if (text) {
+        mentorConversationHistory.push({ role: 'user', text: text });
+    }
     const chatBox = document.getElementById('mentor-chat-messages');
     if (!chatBox) return;
 
@@ -3293,6 +3876,10 @@ function extractTurnRuleTextSnippet(text) {
 function updateMentorBubbleWithResponse(bubbleEl, responseText, provider) {
     if (!bubbleEl) return;
 
+    if (responseText) {
+        mentorConversationHistory.push({ role: 'assistant', text: responseText });
+    }
+
     const tagEl = bubbleEl.querySelector('.bubble-tag');
     if (tagEl) {
         tagEl.textContent = provider || 'NotebookLM';
@@ -3360,8 +3947,26 @@ async function requestMentorInsight(customQuestion = null) {
             studentColor = 'black';
         }
 
-        const isViewingHistory = !!liveGameSnapshot || (typeof selectedHistoryMoveIndex !== 'undefined' && selectedHistoryMoveIndex !== -1);
-        const movesToSend = isViewingHistory ? [] : moveHistory;
+        const movesToSend = (Array.isArray(moveHistory) && moveHistory.length > 0) ? moveHistory : [];
+
+        let moveReviewContext = null;
+        if (typeof activeHistoryNode !== 'undefined' && activeHistoryNode) {
+            const eng = activeHistoryNode.analysis?.engine || {};
+            const vis = (typeof activeClassificationVis !== 'undefined' && activeClassificationVis && activeClassificationVis.node?.id === activeHistoryNode.id) ? activeClassificationVis.data : null;
+            const motifList = vis?.motifs?.map(m => m.title) || (activeHistoryNode.analysis?.motifs || []).map(m => m.title || m.detail || m.id);
+            moveReviewContext = {
+                move_played: activeHistoryNode.move_san,
+                quality: eng.quality || null,
+                best_move: eng.best_move_san || null,
+                eval_delta: (typeof eng.eval_delta === 'number') ? eng.eval_delta : null,
+                fen_before: activeHistoryNode._fen_before || activeHistoryNode.analysis?.context?.fen_before || (typeof startFen !== 'undefined' ? startFen : null),
+                motifs: motifList
+            };
+        }
+
+        const recentChatHistory = (Array.isArray(mentorConversationHistory) && mentorConversationHistory.length > 0)
+            ? mentorConversationHistory.slice(-8)
+            : [];
 
         const resp = await fetch('/api/mentor/explain', {
             method: 'POST',
@@ -3375,7 +3980,9 @@ async function requestMentorInsight(customQuestion = null) {
                 practice_subject: activeSubject,
                 turn_guidelines: currentRules,
                 user_profile: activeProfile,
-                notebook_id: currentNotebookId
+                notebook_id: currentNotebookId,
+                reviewed_move: moveReviewContext,
+                chat_history: recentChatHistory
             })
         });
         const data = await resp.json();
@@ -4095,6 +4702,40 @@ const LEGACY_NODE_ANALYSIS_KEYS = [
 ];
 function migrateProfileNodesToAnalysisV2(profile) {
     let changed = false;
+    if (profile?.history) {
+        const origLen = profile.history.length;
+        // Filter out leftover single-node orphan event
+        profile.history = profile.history.filter(ev => {
+            if (ev.id === 'evt_live_1791920612523') return false;
+            if (ev.moves && ev.moves.length === 1 && ev.moves[0].move_number > 1 && !ev.moves[0].parent_id) {
+                return false;
+            }
+            return true;
+        });
+        if (profile.history.length !== origLen) changed = true;
+
+        // Repair evt_riddle_8 if present
+        profile.history.forEach(ev => {
+            if (ev.id === 'evt_riddle_8') {
+                ev.startingFen = 'k7/8/8/8/8/8/1R6/2R1K3 w - - 0 1';
+                if (ev.moves && ev.moves.length > 0) {
+                    const m = ev.moves[0];
+                    if (m.move_san !== 'Ra1#' || m.analysis_error || m.fen !== 'k7/8/8/8/8/8/1R6/R3K3 b - - 1 1') {
+                        m.move_san = 'Ra1#';
+                        m.move_uci = 'c1a1';
+                        m.fen = 'k7/8/8/8/8/8/1R6/R3K3 b - - 1 1';
+                        delete m.analysis_error;
+                        if (m.analysis && m.analysis.context) {
+                            m.analysis.context.fen_before = 'k7/8/8/8/8/8/1R6/2R1K3 w - - 0 1';
+                            m.analysis.context.fen_after = 'k7/8/8/8/8/8/1R6/R3K3 b - - 1 1';
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        });
+    }
+
     (profile?.history || []).forEach(ev => (ev.moves || []).forEach(n => {
         LEGACY_NODE_ANALYSIS_KEYS.forEach(k => {
             if (k in n) { delete n[k]; changed = true; }
@@ -7145,6 +7786,7 @@ async function seedQaProfileData() {
         qaProf.wins = 31;
         qaProf.draws = 7;
         qaProf.losses = 14;
+        qaProf.history = [];
     }
 
     activeProfileId = 'prof_qa_tester';
@@ -7260,13 +7902,17 @@ function snapshotLiveGameIfNeeded() {
             lastMoveSquares: [...lastMoveSquares],
             whiteTimeMs: (typeof whiteTimeMs !== 'undefined') ? whiteTimeMs : 300000,
             blackTimeMs: (typeof blackTimeMs !== 'undefined') ? blackTimeMs : 300000,
-            isAutoPaused: (typeof isAutoPaused !== 'undefined') ? isAutoPaused : false
+            isAutoPaused: (typeof isAutoPaused !== 'undefined') ? isAutoPaused : false,
+            whitePlayerMode: gameSettings.whitePlayerMode,
+            blackPlayerMode: gameSettings.blackPlayerMode,
+            isGameActive: isGameActive,
+            isFlipped: isFlipped
         };
         const bannerEl = document.getElementById('move-replay-banner');
         const bannerText = document.getElementById('replay-banner-text');
         if (bannerEl) {
             bannerEl.classList.remove('hidden');
-            if (bannerText && !bannerText.textContent.includes('Viewing History')) {
+            if (bannerText && !bannerText.textContent.includes('Viewing History') && !activeBabyStepDrill) {
                 const savedProf = userProfiles.find(p => p.id === activeProfileId);
                 bannerText.textContent = `⏸️ Game Frozen (${savedProf ? savedProf.name : 'Live Game'}) - Return to resume`;
             }
@@ -7275,6 +7921,11 @@ function snapshotLiveGameIfNeeded() {
 }
 
 async function returnToLiveGame() {
+    activeBabyStepDrill = null;
+    activeClassificationVis = null;
+    activeHistoryNode = null;
+    clearClassificationOverlays();
+
     if (liveGameSnapshot) {
         const savedProfId = liveGameSnapshot.profileId;
         const savedEvent = liveGameSnapshot.activeLiveGameEvent;
@@ -7295,14 +7946,34 @@ async function returnToLiveGame() {
         if (typeof whiteTimeMs !== 'undefined') whiteTimeMs = liveGameSnapshot.whiteTimeMs;
         if (typeof blackTimeMs !== 'undefined') blackTimeMs = liveGameSnapshot.blackTimeMs;
         if (typeof isAutoPaused !== 'undefined') isAutoPaused = liveGameSnapshot.isAutoPaused;
+        if (typeof liveGameSnapshot.whitePlayerMode !== 'undefined') {
+            gameSettings.whitePlayerMode = liveGameSnapshot.whitePlayerMode;
+            gameSettings.blackPlayerMode = liveGameSnapshot.blackPlayerMode;
+        }
+        if (typeof liveGameSnapshot.isGameActive !== 'undefined') {
+            isGameActive = liveGameSnapshot.isGameActive;
+        }
+        if (typeof liveGameSnapshot.isFlipped !== 'undefined') {
+            isFlipped = liveGameSnapshot.isFlipped;
+        }
         liveGameSnapshot = null;
+
+        const wRadios = document.querySelectorAll('input[name="white-player-mode"]');
+        wRadios.forEach(r => r.checked = (r.value === gameSettings.whitePlayerMode));
+        const bRadios = document.querySelectorAll('input[name="black-player-mode"]');
+        bRadios.forEach(r => r.checked = (r.value === gameSettings.blackPlayerMode));
 
         parseFenToState(currentFen);
         renderBoard();
         renderMoveHistoryTable();
+        const fenInput = document.getElementById('fen-input-text');
+        if (fenInput) fenInput.value = currentFen;
+        if (typeof generateCurrentPgnText === 'function') generateCurrentPgnText();
+
         if (typeof updateClockDisplaysUI === 'function') updateClockDisplaysUI();
         if (typeof updateClockActiveTurnHighlight === 'function') updateClockActiveTurnHighlight();
         if (typeof updatePauseResumeButtonUI === 'function') updatePauseResumeButtonUI();
+        if (typeof updateClockPlayerTypesUI === 'function') updateClockPlayerTypesUI();
         await updatePositionEvaluation();
 
         const bannerEl = document.getElementById('move-replay-banner');
@@ -7312,16 +7983,32 @@ async function returnToLiveGame() {
         showGameToast(`🎮 Resumed live game (Profile: <strong>${curProf.name}</strong>)`);
     } else {
         selectedHistoryMoveIndex = -1;
+        renderBoard();
+        renderMoveHistoryTable();
+        const fenInput = document.getElementById('fen-input-text');
+        if (fenInput) fenInput.value = currentFen;
+        if (typeof generateCurrentPgnText === 'function') generateCurrentPgnText();
         await updatePositionEvaluation();
         const bannerEl = document.getElementById('move-replay-banner');
         if (bannerEl) bannerEl.classList.add('hidden');
     }
 }
 
-// Bind Return to Live Game button
+// Bind Return to Live Game & Tactical Layer Toggle buttons
 const btnReturnLiveInit = document.getElementById('btn-return-live-game');
 if (btnReturnLiveInit) {
     btnReturnLiveInit.onclick = returnToLiveGame;
+}
+
+const btnToggleTacticalInit = document.getElementById('btn-toggle-tactical-layer');
+if (btnToggleTacticalInit) {
+    btnToggleTacticalInit.onclick = () => {
+        classificationLayerEnabled = !classificationLayerEnabled;
+        btnToggleTacticalInit.textContent = classificationLayerEnabled ? '👁️ Tactical Layer: ON' : '👁️ Tactical Layer: OFF';
+        btnToggleTacticalInit.classList.toggle('btn-secondary', classificationLayerEnabled);
+        btnToggleTacticalInit.classList.toggle('btn-accent', !classificationLayerEnabled);
+        renderBoard();
+    };
 }
 
 // ==========================================
@@ -7831,6 +8518,7 @@ function openMoveContextMenu(e, node, ev) {
     const items = [
         { label: '📈 Stockfish Analysis', run: () => analyzeSingleNode(ev, node, 'stockfish') },
         { label: '🧠 Mentor Analysis', run: () => analyzeSingleNode(ev, node, 'mentor') },
+        { label: '🎯 Train Baby-Step Drills', run: () => startBabyStepDrillFlow(node, ev) },
     ];
     if (node.analysis) items.push({ label: '🔍 Show Analysis', run: () => openNodeAnalysisPopup(node) });
     items.forEach(it => {
@@ -7851,6 +8539,18 @@ function openMoveContextMenu(e, node, ev) {
 async function analyzeSingleNode(ev, node, kind) {
     ev = ev || findEventForNode(node);
     if (!ev) return;
+    // Mark as selected node and locate chip element for visual pulse animation
+    selectedHistoryNodeJson = node;
+    const chipEl = document.querySelector(`button.history-chip[data-node-id="${node.id}"]`);
+    let brainEl = null;
+    if (chipEl) {
+        document.querySelectorAll('.history-chip').forEach(b => b.classList.remove('active-chip'));
+        chipEl.classList.add('active-chip', 'processing');
+        brainEl = document.createElement('span');
+        brainEl.className = 'chip-brain-pulse';
+        brainEl.textContent = '🧠';
+        chipEl.appendChild(brainEl);
+    }
     showGameToast(kind === 'mentor'
         ? `🧠 Asking the mentor about ${node.move_san}... (NotebookLM usually needs 30-60 seconds)`
         : `📈 Stockfish is analysing ${node.move_san}...`, kind === 'mentor' ? 8000 : 2500);
@@ -7864,6 +8564,12 @@ async function analyzeSingleNode(ev, node, kind) {
     } catch (err) {
         if (kind === 'stockfish') node.analysis_error = err.message;
         showGameToast(`⚠️ ${err.message}`, 6000);
+    } finally {
+        // Clean up brain icon and processing state
+        if (chipEl) {
+            chipEl.classList.remove('processing');
+            if (brainEl && brainEl.parentNode) brainEl.parentNode.removeChild(brainEl);
+        }
     }
     saveUserProfilesToStorage();
     queueBackendProfilesSync();
@@ -7893,8 +8599,16 @@ function formatEval(pawns, mate) {
     return `${pawns > 0 ? '+' : ''}${pawns.toFixed(2)}`;
 }
 
-function openNodeAnalysisPopup(node) {
+function findEventForNode(node) {
+    if (!node || !node.id) return null;
+    const prof = (typeof getActiveProfile === 'function') ? getActiveProfile() : null;
+    if (!prof || !prof.history) return null;
+    return prof.history.find(e => (e.moves || []).some(m => m.id === node.id)) || null;
+}
+
+function openNodeAnalysisPopup(node, ev) {
     closeNodeAnalysisPopup();
+    ev = ev || findEventForNode(node);
     const a = node.analysis || {};
     const eng = a.engine;
     const mv = a.move;
@@ -7948,10 +8662,401 @@ function openNodeAnalysisPopup(node) {
                     <div style="color:#71717a;">${escapeHtml(mentor.source || '')}</div>`
                 : '<div style="color:#71717a;">Not analysed by the mentor yet (right-click the move → Mentor Analysis).</div>'}
             </div>
+            <div style="border-top:1px solid #27272a; padding-top:10px; margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:10px; color:#71717a;">Learn in baby steps (fix error ➔ punish ➔ game mastery)</span>
+                <button id="btn-popup-baby-step-drill" style="background:#4f46e5; border:none; color:#fff; padding:5px 12px; border-radius:5px; cursor:pointer; font-weight:700; font-size:11px; display:inline-flex; align-items:center; gap:5px;">🎯 Train Baby-Step Drills</button>
+            </div>
         </div>`;
     popup.addEventListener('click', e => { if (e.target === popup) closeNodeAnalysisPopup(); });
     document.body.appendChild(popup);
     document.getElementById('node-analysis-popup-close').onclick = closeNodeAnalysisPopup;
+    const btnDrill = document.getElementById('btn-popup-baby-step-drill');
+    if (btnDrill) {
+        btnDrill.onclick = () => {
+            closeNodeAnalysisPopup();
+            startBabyStepDrillFlow(node, ev);
+        };
+    }
+}
+
+async function startBabyStepDrillFlow(node, ev) {
+    ev = ev || findEventForNode(node);
+    const mv = node.analysis?.move;
+    const eng = node.analysis?.engine;
+    let targetMotif = mv?.primary_motif?.id;
+    if (!targetMotif && mv?.motifs_against?.length > 0) targetMotif = mv.motifs_against[0].id;
+    if (!targetMotif && mv?.motifs_for?.length > 0) targetMotif = mv.motifs_for[0].id;
+    if (!targetMotif) targetMotif = 'hanging_piece';
+
+    // Accurately resolve board position BEFORE the blunder move was made
+    let rootFen = node.analysis?.context?.fen_before;
+    if (!rootFen && ev && ev.moves) {
+        const mIdx = ev.moves.findIndex(m => m.id === node.id);
+        if (mIdx > 0 && ev.moves[mIdx - 1].fen) rootFen = ev.moves[mIdx - 1].fen;
+        else if (mIdx === 0 && ev.start_fen) rootFen = ev.start_fen;
+    }
+    if (!rootFen) rootFen = node.fen;
+
+    const moveLabel = node.move_san ? `${node.move_number}.${node.color === 'b' ? '..' : ''} ${node.move_san}` : 'this position';
+    showGameToast(`🎯 Generating baby-step workout for <strong>${escapeHtml(moveLabel)}</strong>...`, 3000);
+
+    try {
+        const resp = await fetch('/api/drills/generate-baby-steps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                motif_id: targetMotif,
+                root_fen: rootFen,
+                move_san: node.move_san,
+                best_move_san: eng?.best_move_san,
+                best_move_uci: eng?.best_move_uci,
+                player_color: node.color,
+                game_title: ev?.title
+            })
+        });
+        const data = await resp.json();
+        if (data.stages && data.stages.length > 0) {
+            openBabyStepDrillsModal(data, node, ev);
+        } else {
+            showGameToast(`⚠️ Could not generate drills for ${motifLabel(targetMotif)}`);
+        }
+    } catch (err) {
+        showGameToast(`⚠️ Drill generation failed: ${err.message}`);
+    }
+}
+
+function openBabyStepDrillsModal(data, sourceNode, sourceEv) {
+    const existing = document.getElementById('baby-step-drills-modal');
+    if (existing) existing.remove();
+
+    const stages = data.stages || [];
+    const currentMotif = data.motif_id || 'fork';
+    const modal = document.createElement('div');
+    modal.id = 'baby-step-drills-modal';
+    modal.style.cssText = 'position:fixed; z-index:10002; inset:0; background:rgba(0,0,0,0.65); display:flex; align-items:center; justify-content:center; padding:16px; backdrop-filter:blur(3px);';
+
+    let stagesHtml = '';
+    stages.forEach((st, idx) => {
+        const stageNum = idx + 1;
+        const stageColor = stageNum === 1 ? '#10b981' : (stageNum === 2 ? '#f59e0b' : '#ec4899');
+        const riddles = st.riddles || [];
+        const totalRiddles = st.total_riddles || (riddles.length || 1);
+        const currentRiddleIdx = st.riddle_index || 0;
+
+        let riddleOptionsHtml = '';
+        if (riddles.length > 0) {
+            riddleOptionsHtml = riddles.map((r, rIdx) => 
+                `<option value="${rIdx}" ${rIdx === currentRiddleIdx ? 'selected' : ''}>Riddle ${rIdx + 1}: ${escapeHtml(r.title)}</option>`
+            ).join('');
+        }
+
+        stagesHtml += `
+            <div class="baby-step-card stage-${stageNum}">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="background:${stageColor}; color:#000; font-weight:800; font-size:10px; padding:2px 6px; border-radius:4px;">LEVEL ${stageNum}</span>
+                        <strong style="color:#fff; font-size:12px;">${escapeHtml(st.title)}</strong>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button class="btn btn-xs btn-primary btn-play-baby-step" data-step-index="${idx}" style="font-size:10px; padding:3px 10px; background:#4f46e5; border-color:#6366f1; cursor:pointer;">
+                            ▶️ Play
+                        </button>
+                    </div>
+                </div>
+                <p style="margin:4px 0; color:#d4d4d8; font-size:11px; line-height:1.4;">${escapeHtml(st.description)}</p>
+                
+                <!-- Riddle Selector & Generator Toolbar -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin:6px 0; background:#18181b; padding:4px 8px; border-radius:6px; border:1px solid #27272a;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="font-size:10px; color:#a1a1aa; font-weight:700;">🧩 Riddles (${totalRiddles}):</span>
+                        <select class="select-riddle-index" data-stage-index="${idx}" style="background:#27272a; color:#fff; border:1px solid #3f3f46; font-size:10px; padding:2px 6px; border-radius:4px; max-width:240px; cursor:pointer;">
+                            ${riddleOptionsHtml}
+                        </select>
+                    </div>
+                    <button class="btn btn-xs btn-secondary btn-generate-new-riddle" data-stage-index="${idx}" data-stage-num="${stageNum}" style="font-size:10px; padding:2px 8px; cursor:pointer; background:#3f3f46;" title="Procedurally generate a brand new riddle for this level">
+                        ✨ Generate New
+                    </button>
+                </div>
+
+                <div style="background:#09090b; padding:6px 8px; border-radius:4px; border:1px solid #27272a; font-size:10px; color:#a1a1aa; display:flex; flex-direction:column; gap:2px;">
+                    <div>🎯 <strong style="color:#e4e4e7;">Goal:</strong> ${escapeHtml(st.goal || '')}</div>
+                    <div>💡 <strong style="color:#e4e4e7;">Core Principle:</strong> ${escapeHtml(st.takeaway || '')}</div>
+                </div>
+            </div>
+        `;
+    });
+
+    const motifs = [
+        { id: 'fork', label: '⚔️ The Classic Royal Fork' },
+        { id: 'hanging_piece', label: '🛡️ Loose / Hanging Target (Bishop Capture)' },
+        { id: 'back_rank', label: '🏰 Corridor & Back-Rank Mate' },
+        { id: 'pin', label: '📌 Absolute & Relative Pins' },
+        { id: 'skewer', label: '⚡ Skewer & X-Ray Attacks' },
+        { id: 'discovered_attack', label: '💥 Discovered Attack & Check' },
+        { id: 'trapped_piece', label: '🪤 Trapped Piece & Escape Squares' },
+        { id: 'battery', label: '🔋 Battery Infiltration' },
+        { id: 'overloaded_defender', label: '⚖️ Overloaded Defender' }
+    ];
+
+    const motifOptionsHtml = motifs.map(m =>
+        `<option value="${m.id}" ${m.id === currentMotif ? 'selected' : ''}>${m.label}</option>`
+    ).join('');
+
+    modal.innerHTML = `
+        <div style="background:#18181b; border:1px solid #3f3f46; border-radius:12px; width:min(660px, 100%); max-height:90vh; overflow-y:auto; padding:18px; color:#e4e4e7; font-size:12px; box-shadow:0 12px 30px rgba(0,0,0,0.8);">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; border-bottom:1px solid #27272a; padding-bottom:10px;">
+                <div>
+                    <div style="font-size:15px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px;">
+                        <span>🎯</span> ${escapeHtml(data.title || 'Baby-Step Drill Progression')}
+                    </div>
+                    <div style="font-size:11px; color:#a1a1aa; margin-top:2px;">
+                        ${escapeHtml(data.concept || '')}
+                    </div>
+                </div>
+                <button id="baby-step-modal-close" style="background:none; border:none; color:#a1a1aa; font-size:18px; cursor:pointer; padding:0 4px;">✕</button>
+            </div>
+
+            <!-- Motif Selector Toolbar -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; background:#27272a; padding:8px 12px; border-radius:8px; border:1px solid #3f3f46;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:11px; font-weight:700; color:#e4e4e7;">Tactical Theme:</span>
+                    <select id="baby-step-motif-select" style="background:#18181b; color:#fff; border:1px solid #52525b; border-radius:6px; font-size:11px; padding:4px 8px; cursor:pointer;">
+                        ${motifOptionsHtml}
+                    </select>
+                </div>
+                <span style="font-size:10px; color:#a1a1aa;">10+ distinct riddles per level + endless generator</span>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                ${stagesHtml}
+            </div>
+
+            <div style="margin-top:14px; padding-top:10px; border-top:1px solid #27272a; display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#71717a;">
+                <span>Progressive training: Foundations (~800) ➔ Intermediate (~1300) ➔ Combat Mastery (~1600)</span>
+                <button id="baby-step-modal-dismiss" class="btn btn-xs btn-secondary" style="font-size:10px; padding:3px 10px; cursor:pointer;">Close</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.remove();
+    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+    document.getElementById('baby-step-modal-close').onclick = closeModal;
+    document.getElementById('baby-step-modal-dismiss').onclick = closeModal;
+
+    const motifSelect = document.getElementById('baby-step-motif-select');
+    if (motifSelect) {
+        motifSelect.addEventListener('change', async () => {
+            const newMotif = motifSelect.value;
+            showGameToast(`🎯 Loading ${newMotif} drill...`, 2000);
+            try {
+                const resp = await fetch('/api/drills/generate-baby-steps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        motif_id: newMotif,
+                        player_color: sourceNode?.color || 'w'
+                    })
+                });
+                const newData = await resp.json();
+                if (newData && newData.stages && newData.stages.length > 0) {
+                    openBabyStepDrillsModal(newData, sourceNode, sourceEv);
+                }
+            } catch (err) {
+                showGameToast(`⚠️ Failed to load drill: ${err.message}`);
+            }
+        });
+    }
+
+    modal.querySelectorAll('.select-riddle-index').forEach(sel => {
+        sel.onchange = () => {
+            const sIdx = parseInt(sel.dataset.stageIndex, 10);
+            const rIdx = parseInt(sel.value, 10);
+            if (stages[sIdx]) {
+                stages[sIdx].riddle_index = rIdx;
+                const r = stages[sIdx].riddles[rIdx];
+                if (r) {
+                    stages[sIdx].title = r.title;
+                    stages[sIdx].description = r.description;
+                    stages[sIdx].goal = r.goal;
+                    stages[sIdx].takeaway = r.takeaway;
+                    stages[sIdx].fen = r.fen;
+                    stages[sIdx].turn = r.turn;
+                    stages[sIdx].sequence = r.sequence;
+                    stages[sIdx].best_move_san = r.best_move_san;
+                    stages[sIdx].best_move_uci = r.best_move_uci;
+                }
+            }
+        };
+    });
+
+    modal.querySelectorAll('.btn-generate-new-riddle').forEach(btn => {
+        btn.onclick = async (e) => {
+            e.stopPropagation();
+            const sIdx = parseInt(btn.dataset.stageIndex, 10);
+            const stageNum = sIdx + 1;
+            showGameToast(`✨ Generating new Level ${stageNum} riddle...`, 2000);
+            try {
+                const resp = await fetch('/api/drills/generate-level-riddle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        motif_id: currentMotif,
+                        level: stageNum,
+                        exclude_ids: (stages[sIdx].riddles || []).map(r => r.id)
+                    })
+                });
+                const res = await resp.json();
+                if (res && res.riddle) {
+                    if (!stages[sIdx].riddles) stages[sIdx].riddles = [];
+                    stages[sIdx].riddles.push(res.riddle);
+                    stages[sIdx].riddle_index = stages[sIdx].riddles.length - 1;
+                    stages[sIdx].total_riddles = stages[sIdx].riddles.length;
+                    openBabyStepDrillsModal(data, sourceNode, sourceEv);
+                    showGameToast(`🎉 Generated Riddle: <strong>${escapeHtml(res.riddle.title)}</strong>!`, 3000);
+                }
+            } catch (err) {
+                showGameToast(`⚠️ Failed to generate: ${err.message}`);
+            }
+        };
+    });
+
+    modal.querySelectorAll('.btn-play-baby-step').forEach(btn => {
+        btn.onclick = async () => {
+            const idx = parseInt(btn.dataset.stepIndex, 10);
+            const sel = modal.querySelector(`.select-riddle-index[data-stage-index="${idx}"]`);
+            const rIdx = sel ? parseInt(sel.value, 10) : (stages[idx]?.riddle_index || 0);
+            closeModal();
+            closeNodeAnalysisPopup();
+            await loadBabyStepDrillStage(data, sourceNode, sourceEv, idx, rIdx);
+        };
+    });
+}
+
+let activeBabyStepDrill = null;
+
+async function loadBabyStepDrillStage(data, sourceNode, sourceEv, stageIndex, riddleIndex) {
+    const stages = data.stages || [];
+    const stage = stages[stageIndex];
+    if (!stage) return;
+
+    const riddles = stage.riddles || [];
+    let rIdx = (riddleIndex !== undefined) ? riddleIndex : (stage.riddle_index || 0);
+    if (rIdx < 0) rIdx = 0;
+    if (riddles.length > 0 && rIdx >= riddles.length) rIdx = riddles.length - 1;
+
+    let activeRiddle = (riddles.length > 0 && riddles[rIdx]) ? riddles[rIdx] : stage;
+    stage.riddle_index = rIdx;
+
+    const drillFen = activeRiddle.fen || stage.fen;
+    if (!drillFen) return;
+
+    snapshotLiveGameIfNeeded();
+
+    const drillTurn = activeRiddle.turn || stage.turn || drillFen.split(' ')[1] || 'w';
+    gameSettings.whitePlayerMode = 'manual';
+    gameSettings.blackPlayerMode = 'manual';
+    isFlipped = (drillTurn === 'b');
+
+    isGameActive = true;
+    isAutoPaused = false;
+    isExecutingMove = false;
+    botMoveInFlight = false;
+    selectedSquare = null;
+    draggedSquare = null;
+
+    activeBabyStepDrill = {
+        data: data,
+        sourceNode: sourceNode,
+        sourceEv: sourceEv,
+        stages: stages,
+        stageIndex: stageIndex,
+        stage: stage,
+        riddleIndex: rIdx,
+        activeRiddle: activeRiddle,
+        drillTurn: drillTurn,
+        sequence: activeRiddle.sequence || (activeRiddle.best_move_uci ? [activeRiddle.best_move_uci] : []),
+        stepIndexInSequence: 0,
+        solved: false
+    };
+
+    const wRadios = document.querySelectorAll('input[name="white-player-mode"]');
+    wRadios.forEach(r => r.checked = (r.value === 'manual'));
+    const bRadios = document.querySelectorAll('input[name="black-player-mode"]');
+    bRadios.forEach(r => r.checked = (r.value === 'manual'));
+
+    if (typeof updateClockPlayerTypesUI === 'function') updateClockPlayerTypesUI();
+    if (typeof updatePauseResumeButtonUI === 'function') updatePauseResumeButtonUI();
+
+    startFen = drillFen;
+    currentFen = drillFen;
+    moveHistory = [];
+    moveStackUci = [];
+    lastMoveSquares = [];
+    parseFenToState(drillFen);
+    initBoard();
+    renderBoard();
+    renderMoveHistoryTable();
+
+    await updatePositionEvaluation(drillFen, []);
+
+    const totalRiddles = riddles.length || stage.total_riddles || 1;
+    const banner = document.getElementById('move-replay-banner');
+    const bannerText = document.getElementById('replay-banner-text');
+    if (banner && bannerText) {
+        banner.classList.remove('hidden');
+        bannerText.innerHTML = `🎯 <strong>[Level ${stage.step} - Riddle ${rIdx + 1}/${totalRiddles}]:</strong> ${escapeHtml(activeRiddle.title || stage.title)} 
+            <span style="color:#a5b4fc; margin-left:6px;">Goal: ${escapeHtml(activeRiddle.goal || stage.goal)}</span>
+            <div style="display:inline-flex; align-items:center; gap:4px; margin-left:8px;">
+                <button id="btn-prev-riddle-top" class="btn btn-xs btn-secondary" style="font-size:10px; padding:2px 6px; cursor:pointer;" ${rIdx <= 0 ? 'disabled style="opacity:0.5;"' : ''} title="Previous Riddle in this Level">⏮️ Prev</button>
+                <button id="btn-next-riddle-top" class="btn btn-xs btn-secondary" style="font-size:10px; padding:2px 6px; cursor:pointer;" ${rIdx >= totalRiddles - 1 ? 'disabled style="opacity:0.5;"' : ''} title="Next Riddle in this Level">Next ⏭️</button>
+                <button id="btn-gen-riddle-top" class="btn btn-xs btn-primary" style="font-size:10px; padding:2px 8px; background:#6366f1; border:none; cursor:pointer;" title="Generate a fresh new riddle for this level">✨ New Riddle</button>
+                <button id="btn-reset-baby-step-top" class="btn btn-xs btn-secondary" style="font-size:10px; padding:2px 6px; cursor:pointer;" title="Reset position">🔄 Reset</button>
+            </div>`;
+
+        const btnPrev = document.getElementById('btn-prev-riddle-top');
+        if (btnPrev && rIdx > 0) {
+            btnPrev.onclick = () => loadBabyStepDrillStage(data, sourceNode, sourceEv, stageIndex, rIdx - 1);
+        }
+        const btnNext = document.getElementById('btn-next-riddle-top');
+        if (btnNext && rIdx < totalRiddles - 1) {
+            btnNext.onclick = () => loadBabyStepDrillStage(data, sourceNode, sourceEv, stageIndex, rIdx + 1);
+        }
+        const btnReset = document.getElementById('btn-reset-baby-step-top');
+        if (btnReset) {
+            btnReset.onclick = () => loadBabyStepDrillStage(data, sourceNode, sourceEv, stageIndex, rIdx);
+        }
+        const btnGen = document.getElementById('btn-gen-riddle-top');
+        if (btnGen) {
+            btnGen.onclick = async () => {
+                showGameToast(`✨ Generating new Level ${stage.step} riddle...`, 2000);
+                try {
+                    const resp = await fetch('/api/drills/generate-level-riddle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            motif_id: data.motif_id || 'fork',
+                            level: stage.step || (stageIndex + 1),
+                            exclude_ids: (stage.riddles || []).map(r => r.id)
+                        })
+                    });
+                    const res = await resp.json();
+                    if (res && res.riddle) {
+                        if (!stage.riddles) stage.riddles = [];
+                        stage.riddles.push(res.riddle);
+                        stage.total_riddles = stage.riddles.length;
+                        await loadBabyStepDrillStage(data, sourceNode, sourceEv, stageIndex, stage.riddles.length - 1);
+                        showGameToast(`🎉 Loaded New Riddle: <strong>${escapeHtml(res.riddle.title)}</strong>!`, 3500);
+                    }
+                } catch (e) {
+                    showGameToast(`⚠️ Failed to generate: ${e.message}`);
+                }
+            };
+        }
+    }
+    const colorName = drillTurn === 'w' ? '⚪ White' : '⚫ Black';
+    showGameToast(`🎯 Loaded [Level ${stage.step} - Riddle ${rIdx + 1}/${totalRiddles}]: <strong>${escapeHtml(activeRiddle.title || stage.title)}</strong><br>You play as <strong>${colorName}</strong>.`, 4000);
 }
 
 // ==========================================
@@ -8060,6 +9165,15 @@ async function renderProfileHistoryTab() {
     }
 
     if (!gamesPane) return;
+    const prevScrollTop = gamesPane.scrollTop;
+    const openCardIds = new Set();
+    gamesPane.querySelectorAll('.history-event-card').forEach(card => {
+        const body = card.querySelector('.history-event-body');
+        if (body && !body.classList.contains('hidden') && card.dataset.eventId) {
+            openCardIds.add(card.dataset.eventId);
+        }
+    });
+
     gamesPane.innerHTML = '';
 
     if (history.length === 0) {
@@ -8072,9 +9186,208 @@ async function renderProfileHistoryTab() {
         return;
     }
 
+    // ==========================================
+    // 🔍 Multi-Dimensional Filter Population & Matching
+    // ==========================================
+    const filterSearchInput = document.getElementById('history-filter-search');
+    const filterDatalist = document.getElementById('history-filter-datalist');
+    const filterQualitySelect = document.getElementById('history-filter-quality');
+    const filterMotifSelect = document.getElementById('history-filter-motif');
+    const filterStatusEl = document.getElementById('history-filter-status');
+    const filterClearBtn = document.getElementById('btn-history-filter-clear');
+
+    // Build curated + detected sequence / opening names & motifs
+    const detectedOpenings = new Set([
+        "London System", "Ruy Lopez", "Fried Liver Attack", "Chopped Liver",
+        "Sicilian Defense", "Italian Game", "French Defense", "Caro-Kann Defense",
+        "Queen's Gambit", "King's Indian Defense", "Scotch Game", "Four Knights Game",
+        "Scandinavian Defense", "English Opening", "Vienna Game"
+    ]);
+    const detectedMotifs = new Map();
+
+    history.forEach(ev => {
+        if (ev.title) {
+            const cleanTitle = ev.title.split('#')[0].replace(/^(Game|Drill|Riddle)\s*\d*:\s*/i, '').trim();
+            if (cleanTitle.length > 2) detectedOpenings.add(cleanTitle);
+        }
+        (ev.moves || []).forEach(m => {
+            const opName = m.analysis?.context?.opening?.name;
+            if (opName) detectedOpenings.add(opName);
+            const opEco = m.analysis?.context?.opening?.eco;
+            if (opEco) detectedOpenings.add(opEco);
+
+            const mv = m.analysis?.move;
+            if (mv) {
+                const addMotif = (mObj) => {
+                    if (!mObj || !mObj.id) return;
+                    const id = mObj.id;
+                    const label = motifLabel(id);
+                    if (!detectedMotifs.has(id)) {
+                        detectedMotifs.set(id, { label, count: 0 });
+                    }
+                    detectedMotifs.get(id).count++;
+                };
+                (mv.motifs_for || []).forEach(addMotif);
+                (mv.motifs_against || []).forEach(addMotif);
+                if (mv.primary_motif) addMotif(mv.primary_motif);
+            }
+        });
+    });
+
+    if (filterDatalist) {
+        filterDatalist.innerHTML = '';
+        Array.from(detectedOpenings).sort().forEach(op => {
+            const opt = document.createElement('option');
+            opt.value = op;
+            filterDatalist.appendChild(opt);
+        });
+        detectedMotifs.forEach((val, id) => {
+            const opt = document.createElement('option');
+            opt.value = val.label;
+            filterDatalist.appendChild(opt);
+        });
+    }
+
+    if (filterMotifSelect) {
+        const curSelected = filterMotifSelect.value;
+        filterMotifSelect.innerHTML = '<option value="">All Motifs</option>';
+        Array.from(detectedMotifs.entries())
+            .sort((a, b) => a[1].label.localeCompare(b[1].label))
+            .forEach(([id, val]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = `${val.label} (${val.count})`;
+                if (curSelected === id) opt.selected = true;
+                filterMotifSelect.appendChild(opt);
+            });
+    }
+
+    const activeSearch = (filterSearchInput?.value || '').trim().toLowerCase();
+    const activeQuality = filterQualitySelect?.value || '';
+    const activeMotif = filterMotifSelect?.value || '';
+    const isFilterActive = Boolean(activeSearch || activeQuality || activeMotif);
+
+    function matchesNodeFilter(node, ev) {
+        if (!isFilterActive) return true;
+        const eng = nodeEngine(node);
+        const mv = node.analysis?.move;
+
+        // Quality check
+        if (activeQuality) {
+            const q = eng?.quality || '';
+            if (activeQuality === 'Blunder') {
+                if (q !== 'Blunder' && node.leaf_termination !== 'abandoned_undo') return false;
+            } else if (q !== activeQuality) {
+                return false;
+            }
+        }
+
+        // Motif check
+        if (activeMotif) {
+            let hasMotif = false;
+            if (mv) {
+                if (mv.primary_motif && mv.primary_motif.id === activeMotif) hasMotif = true;
+                if (!hasMotif && (mv.motifs_for || []).some(x => x.id === activeMotif)) hasMotif = true;
+                if (!hasMotif && (mv.motifs_against || []).some(x => x.id === activeMotif)) hasMotif = true;
+            }
+            if (!hasMotif) return false;
+        }
+
+        // Free-form Search text check (opening, ECO, SAN, UCI, notes, aliases)
+        if (activeSearch) {
+            let hit = false;
+            const opName = (node.analysis?.context?.opening?.name || '').toLowerCase();
+            const opEco = (node.analysis?.context?.opening?.eco || '').toLowerCase();
+            const evTitle = (ev.title || '').toLowerCase();
+            const san = (node.move_san || '').toLowerCase();
+            const uci = (node.move_uci || '').toLowerCase();
+            const mentorText = ((node.analysis?.mentor?.move_comment || '') + ' ' + (node.analysis?.mentor?.drill || '')).toLowerCase();
+
+            if (evTitle.includes(activeSearch) || opName.includes(activeSearch) || opEco.includes(activeSearch) || san === activeSearch || uci === activeSearch || mentorText.includes(activeSearch)) {
+                hit = true;
+            }
+
+            // Famous alias mappings (e.g. "chopped liver" or "fried liver")
+            if (!hit && (activeSearch.includes('chopped liver') || activeSearch.includes('fried liver') || activeSearch.includes('liver'))) {
+                if (opName.includes('two knights') || opName.includes('italian') || evTitle.includes('liver') || (node.move_uci && (node.move_uci.endsWith('f7') || node.move_uci.startsWith('f7')))) {
+                    hit = true;
+                }
+            }
+
+            // Search within tactical motif names & details
+            if (!hit && mv) {
+                const allMotifs = [...(mv.motifs_for || []), ...(mv.motifs_against || [])];
+                if (mv.primary_motif) allMotifs.push(mv.primary_motif);
+                for (let mf of allMotifs) {
+                    const label = motifLabel(mf.id).toLowerCase();
+                    const detail = (mf.detail || '').toLowerCase();
+                    if (label.includes(activeSearch) || detail.includes(activeSearch) || mf.id.includes(activeSearch)) {
+                        hit = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hit) return false;
+        }
+
+        return true;
+    }
+
+    // Attach filter event listeners once
+    if (filterSearchInput && !filterSearchInput.dataset.bound) {
+        filterSearchInput.dataset.bound = 'true';
+        filterSearchInput.addEventListener('input', () => renderProfileHistoryTab());
+    }
+    if (filterQualitySelect && !filterQualitySelect.dataset.bound) {
+        filterQualitySelect.dataset.bound = 'true';
+        filterQualitySelect.addEventListener('change', () => renderProfileHistoryTab());
+    }
+    if (filterMotifSelect && !filterMotifSelect.dataset.bound) {
+        filterMotifSelect.dataset.bound = 'true';
+        filterMotifSelect.addEventListener('change', () => renderProfileHistoryTab());
+    }
+    if (filterClearBtn && !filterClearBtn.dataset.bound) {
+        filterClearBtn.dataset.bound = 'true';
+        filterClearBtn.addEventListener('click', () => {
+            if (filterSearchInput) filterSearchInput.value = '';
+            if (filterQualitySelect) filterQualitySelect.value = '';
+            if (filterMotifSelect) filterMotifSelect.value = '';
+            renderProfileHistoryTab();
+        });
+    }
+
+    // If a node was selected, determine which event it belongs to so that event card remains open
+    let selectedEventId = null;
+    if (selectedHistoryNodeJson) {
+        const matchingEv = history.find(e => (e.moves || []).some(m => m.id === selectedHistoryNodeJson.id));
+        if (matchingEv) selectedEventId = matchingEv.id;
+    }
+
+    let matchedEventsCount = 0;
+    let totalMatchedMoves = 0;
+
     history.forEach((ev, evIdx) => {
+        const moves = ev.moves || [];
+        const mainlineMoves = moves.filter(m => m.branch_id === 'mainline' && m.leaf_termination !== 'abandoned_undo');
+        const undoMoves = moves.filter(m => !mainlineMoves.includes(m));
+
+        const matchedMainlineCount = mainlineMoves.filter(m => matchesNodeFilter(m, ev)).length;
+        const matchedUndoCount = undoMoves.filter(m => matchesNodeFilter(m, ev)).length;
+        const eventMatchedCount = matchedMainlineCount + matchedUndoCount;
+
+        if (isFilterActive && eventMatchedCount === 0) {
+            return; // Skip game card if no matching moves
+        }
+
+        if (isFilterActive) {
+            matchedEventsCount++;
+            totalMatchedMoves += eventMatchedCount;
+        }
+
         const evCard = document.createElement('div');
         evCard.className = 'history-event-card';
+        evCard.dataset.eventId = ev.id || `ev_${evIdx}`;
         evCard.style.flexShrink = '0';
 
         const isWin = ev.result === '1-0' || ev.result === 'completed';
@@ -8082,12 +9395,13 @@ async function renderProfileHistoryTab() {
         const resultColor = isWin ? '#22c55e' : (isLoss ? '#ef4444' : '#a1a1aa');
         const icon = ev.type === 'riddle' ? '🧩' : (ev.type === 'exercise' ? '🎯' : '♟️');
 
-        const moves = ev.moves || [];
-        const mainlineMoves = moves.filter(m => m.branch_id === 'mainline' && m.leaf_termination !== 'abandoned_undo');
-        const undoMoves = moves.filter(m => !mainlineMoves.includes(m));
+        // Preserve open state if previously open, or if it contains the selected node, or if filter active (auto-expand!), or default to first game open
+        const cardKey = ev.id || `ev_${evIdx}`;
+        const shouldBeOpen = isFilterActive ? true : (openCardIds.size > 0
+            ? (openCardIds.has(cardKey) || ev.id === selectedEventId)
+            : (selectedEventId ? ev.id === selectedEventId : evIdx === 0));
 
-        // Auto-expand the first game so move chips are immediately visible
-        const isFirstOpen = (evIdx === 0);
+        const matchBadge = isFilterActive ? `<span style="font-size:9px; background:#0284c7; color:#fff; padding:1px 5px; border-radius:3px; font-weight:700;">${eventMatchedCount} match</span>` : '';
 
         evCard.innerHTML = `
             <div class="history-event-header clickable">
@@ -8095,14 +9409,15 @@ async function renderProfileHistoryTab() {
                     <span class="history-game-num">#${evIdx + 1}</span>
                     <span style="flex-shrink:0;">${icon}</span>
                     <strong style="font-size:12px; color:#fff; white-space:nowrap; text-overflow:ellipsis; overflow:hidden;" title="${ev.title}">${ev.title}</strong>
+                    ${matchBadge}
                 </div>
                 <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
                     <span style="font-size:10px; font-weight:700; color:${resultColor}; border:1px solid ${resultColor}; padding:1px 5px; border-radius:4px;">${ev.result}</span>
                     <span style="font-size:10px; color:#71717a;">${moves.length}n</span>
-                    <span class="event-collapse-arrow" style="font-size:10px; color:#a1a1aa;">${isFirstOpen ? '▲' : '▼'}</span>
+                    <span class="event-collapse-arrow" style="font-size:10px; color:#a1a1aa;">${shouldBeOpen ? '▲' : '▼'}</span>
                 </div>
             </div>
-            <div class="history-event-body ${isFirstOpen ? '' : 'hidden'}">
+            <div class="history-event-body ${shouldBeOpen ? '' : 'hidden'}">
                 ${ev.goal ? `<div style="color:#a5b4fc; margin-bottom:6px; font-size:11px;">🎯 Goal: ${ev.goal}</div>` : ''}
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                     <span style="font-size:10px; color:#71717a;">Opponent: ${ev.opponent || 'Stockfish'}</span>
@@ -8148,7 +9463,8 @@ async function renderProfileHistoryTab() {
         const mainlineRow = document.createElement('div');
         mainlineRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; align-items:center;';
         mainlineMoves.forEach(m => {
-            const chip = createMoveChipElement(m, ev);
+            const isMatched = matchesNodeFilter(m, ev);
+            const chip = createMoveChipElement(m, ev, false, isFilterActive, isMatched);
             mainlineRow.appendChild(chip);
         });
         chipsContainer.appendChild(mainlineRow);
@@ -8169,7 +9485,10 @@ async function renderProfileHistoryTab() {
             undoGroup.innerHTML = `<span style="font-size:10px; color:#fca5a5; font-weight:700;">${label}</span>`;
             const undoRow = document.createElement('div');
             undoRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin-top:2px;';
-            branchMoves.forEach(m => undoRow.appendChild(createMoveChipElement(m, ev, true)));
+            branchMoves.forEach(m => {
+                const isMatched = matchesNodeFilter(m, ev);
+                undoRow.appendChild(createMoveChipElement(m, ev, true, isFilterActive, isMatched));
+            });
             undoGroup.appendChild(undoRow);
             chipsContainer.appendChild(undoGroup);
         });
@@ -8177,7 +9496,33 @@ async function renderProfileHistoryTab() {
         gamesPane.appendChild(evCard);
     });
 
-    // In QA mode, automatically display the first node's schema in the JSON inspector safely
+    if (filterStatusEl) {
+        if (isFilterActive) {
+            filterStatusEl.innerHTML = `<span style="color:#38bdf8; font-weight:700;">🔍 ${totalMatchedMoves} matching moves</span> across <span style="color:#e4e4e7; font-weight:700;">${matchedEventsCount} games</span>`;
+        } else {
+            filterStatusEl.textContent = `Showing all ${history.length} games (${totalNodes} DAG nodes)`;
+        }
+    }
+
+    if (isFilterActive && totalMatchedMoves === 0) {
+        gamesPane.innerHTML = `
+            <div style="text-align:center; padding:35px 15px; color:#a1a1aa; font-size:12px;">
+                🔍 No moves or games matched the active filters.<br>
+                <button id="btn-empty-clear-filters" class="btn btn-xs btn-secondary" style="margin-top:10px; font-size:11px; padding:3px 12px; cursor:pointer;">✕ Clear Filters</button>
+            </div>
+        `;
+        const btnEmptyClear = document.getElementById('btn-empty-clear-filters');
+        if (btnEmptyClear) {
+            btnEmptyClear.onclick = () => {
+                if (filterSearchInput) filterSearchInput.value = '';
+                if (filterQualitySelect) filterQualitySelect.value = '';
+                if (filterMotifSelect) filterMotifSelect.value = '';
+                renderProfileHistoryTab();
+            };
+        }
+    }
+
+    // In QA mode, automatically display the first node's schema in the JSON inspector safely if none chosen yet
     if (prof.is_qa && !selectedHistoryNodeJson && history.length > 0) {
         const firstEv = history[0];
         if (firstEv && firstEv.moves && firstEv.moves.length > 0) {
@@ -8191,11 +9536,20 @@ async function renderProfileHistoryTab() {
     }
 
     applyHistoryFontScale(historyFontScale);
+
+    // Restore scroll position
+    if (prevScrollTop > 0) {
+        gamesPane.scrollTop = prevScrollTop;
+    }
 }
 
-function createMoveChipElement(node, event, isUndo = false) {
+function createMoveChipElement(node, event, isUndo = false, isFilterActive = false, isMatched = false) {
     const chip = document.createElement('button');
     chip.className = 'history-chip';
+    chip.dataset.nodeId = node.id;
+    if (selectedHistoryNodeJson && selectedHistoryNodeJson.id === node.id) {
+        chip.classList.add('active-chip');
+    }
     const eng = nodeEngine(node);
     const cls = eng?.quality;
 
@@ -8203,6 +9557,14 @@ function createMoveChipElement(node, event, isUndo = false) {
         chip.classList.add('blunder-chip');
     } else if (eng?.missed_opportunity || cls === 'Mistake') {
         chip.classList.add('missed-chip');
+    }
+
+    if (isFilterActive) {
+        if (isMatched) {
+            chip.classList.add('filter-matched-chip');
+        } else {
+            chip.classList.add('filter-dimmed-chip');
+        }
     }
 
     const stressInfo = node.time_control_metrics ? ` | Stress: ${node.time_control_metrics.stress_index}/100 (${node.time_control_metrics.stress_level})` : '';
@@ -8262,26 +9624,51 @@ function createMoveChipElement(node, event, isUndo = false) {
         // Snapshot live game
         snapshotLiveGameIfNeeded();
 
-        // Load position onto main board and evaluate with Stockfish
-        if (node.fen) {
-            currentFen = node.fen;
-            if (node.move_uci && node.move_uci.length >= 4) {
-                lastMoveSquares = [node.move_uci.slice(0, 2), node.move_uci.slice(2, 4)];
+        // Reconstruct the exact move chain leading to this node in the historic game
+        let moveChain = [];
+        if (event && Array.isArray(event.moves)) {
+            let curr = node;
+            const visited = new Set();
+            while (curr && !visited.has(curr.id)) {
+                visited.add(curr.id);
+                moveChain.unshift(curr);
+                curr = event.moves.find(m => m.id === curr.parent_id);
             }
-            parseFenToState(currentFen);
-            renderBoard();
-            await updatePositionEvaluation(node.fen, []);
+        }
+        if (!moveChain.length) {
+            moveChain = [node];
         }
 
-        // Show banner
-        const banner = document.getElementById('move-replay-banner');
-        const bannerText = document.getElementById('replay-banner-text');
-        if (banner) {
-            banner.classList.remove('hidden');
-            if (bannerText) {
-                bannerText.textContent = `🟢 Viewing History: ${event.title} (${node.move_number}.${node.move_san})`;
-            }
+        const histSanMoves = moveChain.map(m => m.move_san).filter(Boolean);
+        const histUciMoves = moveChain.map(m => m.move_uci).filter(Boolean);
+        const eventStartFen = event?.startingFen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+        startFen = eventStartFen;
+        currentFen = node.fen;
+        moveHistory = [...histSanMoves];
+        moveStackUci = [...histUciMoves];
+        selectedHistoryMoveIndex = histSanMoves.length - 1;
+
+        if (node.move_uci && node.move_uci.length >= 4) {
+            lastMoveSquares = [node.move_uci.slice(0, 2), node.move_uci.slice(2, 4)];
         }
+
+        node._fen_before = (moveChain.length >= 2) ? moveChain[moveChain.length - 2].fen : eventStartFen;
+        activeHistoryNode = node;
+
+        // Render board, move table, evaluation, and update FEN/PGN state
+        parseFenToState(currentFen);
+        renderBoard();
+        renderMoveHistoryTable();
+
+        const fenInput = document.getElementById('fen-input-text');
+        if (fenInput) fenInput.value = currentFen;
+        if (typeof generateCurrentPgnText === 'function') generateCurrentPgnText();
+
+        await updatePositionEvaluation(node.fen, []);
+
+        // Activate Move Classification Tactical Visualization Layer (overlays, arrows, motifs, refutation line)
+        await activateMoveClassificationVisualization(node, event);
 
         // QA Mode: update live Raw Node JSON inspector
         const prof = getActiveProfile();
@@ -8702,9 +10089,33 @@ function initQaJsonExplorerEvents() {
     }
 }
 
+window.openBabyStepDrillsQuickCatalog = async function() {
+    showGameToast('🎯 Loading Tactical Drills...', 2000);
+    try {
+        const resp = await fetch('/api/drills/generate-baby-steps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ motif_id: 'fork', player_color: 'w' })
+        });
+        const data = await resp.json();
+        if (data && data.stages && data.stages.length > 0) {
+            openBabyStepDrillsModal(data, null, null);
+        } else {
+            showGameToast('⚠️ Could not load drills.');
+        }
+    } catch (e) {
+        showGameToast(`⚠️ Failed to open drills: ${e.message}`);
+    }
+};
+
 function initEnhancedAnalyticsUI() {
     const btnNav = document.getElementById('header-btn-analytics');
     if (btnNav) btnNav.onclick = openEnhancedAnalyticsModal;
+
+    const btnDrills = document.getElementById('header-btn-baby-drills');
+    if (btnDrills) {
+        btnDrills.onclick = window.openBabyStepDrillsQuickCatalog;
+    }
 
     const btnClose1 = document.getElementById('btn-close-analytics-modal');
     if (btnClose1) btnClose1.onclick = closeEnhancedAnalyticsModal;
@@ -8824,9 +10235,19 @@ async function syncProfilesWithBackend(forceRefresh = false) {
                         const shouldUpdate = forceRefresh || !local.history || localLen === 0 || (bpLen > localLen) || bp.is_qa;
 
                         if (bpLen > 0 && shouldUpdate) {
-                            // Keep any local live games played during this session that aren't on backend
-                            const localLive = (local.history || []).filter(g => g.id && (g.id.startsWith('evt_live_') || g.id.startsWith('evt_saved_')) && !bp.history.some(bg => bg.id === g.id));
-                            local.history = [...localLive, ...bp.history];
+                            if (bp.id === 'prof_qa_tester' || bp.is_qa) {
+                                // QA profile should strictly mirror authoritative backend test fixtures
+                                local.history = bp.history || [];
+                            } else {
+                                // Keep any local live games played during this session that aren't on backend
+                                const localLive = (local.history || []).filter(g => 
+                                    g.id && 
+                                    (g.id.startsWith('evt_live_') || g.id.startsWith('evt_saved_')) && 
+                                    !bp.history.some(bg => bg.id === g.id) &&
+                                    !(g.moves && g.moves.length === 1 && g.moves[0].move_number > 1 && !g.moves[0].parent_id)
+                                );
+                                local.history = [...localLive, ...bp.history];
+                            }
                             local.gamesPlayed = bp.gamesPlayed || bp.games_tracked || local.history.length;
                             local.wins = bp.wins ?? local.wins;
                             local.draws = bp.draws ?? local.draws;

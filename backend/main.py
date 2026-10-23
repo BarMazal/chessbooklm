@@ -12,6 +12,8 @@ from typing import Optional, List, Dict, Any, Union
 from backend.chess_engine import ChessEngineManager
 from backend.chess_translator import ChessTranslator
 from backend.move_analysis import MOTIF_INFO, TACTICAL_MOTIFS, analyze_move, build_sequence_analysis
+from backend.classification_visualizer import compute_move_classification_visualization
+from backend.drill_generator import generate_baby_step_progression
 from backend.mentor import MentorService
 from backend.config import STOCKFISH_PATH, NOTEBOOKLM_NOTEBOOK_ID, NOTEBOOKLM_AUTH_TOKEN, HOST, PORT
 
@@ -73,6 +75,8 @@ class MentorExplainRequest(BaseModel):
     turn_guidelines: Optional[List[dict]] = None
     user_profile: Optional[dict] = None
     notebook_id: Optional[str] = None
+    reviewed_move: Optional[Dict[str, Any]] = None
+    chat_history: Optional[List[Dict[str, Any]]] = None
 
 
 class LLMSquareAnalysisRequest(BaseModel):
@@ -208,6 +212,9 @@ async def get_notebooks():
     Returns list of all available NotebookLM notebooks for the active account profile.
     """
     notebooks = await mentor_service.list_notebooks()
+    if not mentor_service.notebook_id and notebooks:
+        chess_nb = next((n for n in notebooks if "chess" in n.get("title", "").lower()), notebooks[0])
+        mentor_service.notebook_id = chess_nb.get("id", "")
     return {
         "active_notebook_id": mentor_service.notebook_id,
         "notebooks": notebooks
@@ -247,33 +254,39 @@ async def select_notebook(req: SelectNotebookRequest):
 def build_board_from_request(fen: Optional[str], moves: Optional[List[str]]) -> chess.Board:
     """
     Safely constructs a chess.Board from FEN or moves list.
-    Prioritizes specific non-start FEN so current board state is accurately reflected.
+    Prioritizes accurate board position and preserves move stack for PGN context when available.
     """
     STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-    if fen and fen != "start" and fen.strip() != STARTING_FEN:
+
+    # 1. If moves list is provided, try replaying from starting position
+    if moves and len(moves) > 0:
         try:
-            return chess.Board(fen)
+            test_board = chess.Board()
+            for m in moves:
+                try:
+                    test_board.push_san(m)
+                except Exception:
+                    test_board.push_uci(m)
+
+            # If no FEN or start FEN was requested, test_board is the exact board
+            if not fen or fen == "start" or fen.strip() == STARTING_FEN:
+                return test_board
+
+            # If test_board's piece placement matches fen, return test_board (it contains full move history)
+            if test_board.fen().split()[0] == fen.strip().split()[0]:
+                return test_board
         except Exception:
             pass
 
-    if moves and len(moves) > 0:
-        board = chess.Board()
-        for m in moves:
-            try:
-                board.push_san(m)
-            except Exception:
-                try:
-                    board.push_uci(m)
-                except Exception:
-                    pass
-        return board
-    elif fen and fen != "start":
+    # 2. If fen is provided and valid, load the exact position directly
+    if fen and fen != "start":
         try:
-            return chess.Board(fen)
+            return chess.Board(fen.strip())
         except Exception:
-            return chess.Board()
-    else:
-        return chess.Board()
+            pass
+
+    # 3. Fallback to standard start board
+    return chess.Board()
 
 
 @app.post("/api/board/evaluate")
@@ -640,10 +653,68 @@ async def explain_position(req: MentorExplainRequest):
         board = build_board_from_request(req.fen, req.moves)
         eval_res = await engine_manager.evaluate_position(board, depth=12)
 
+        # Detect and evaluate any candidate moves mentioned by the user in the question
+        candidate_evals = []
+        if req.question:
+            check_board = None
+            if req.reviewed_move and req.reviewed_move.get("fen_before"):
+                try:
+                    check_board = chess.Board(req.reviewed_move["fen_before"])
+                except Exception:
+                    check_board = board
+            else:
+                check_board = board
+
+            if check_board:
+                words = [w.strip("?,.!;:'\"()") for w in req.question.split()]
+                seen_uci = set()
+                excluded_uci = set()
+                if req.reviewed_move:
+                    for k in ("move_played", "best_move"):
+                        val = req.reviewed_move.get(k)
+                        if val:
+                            try:
+                                m = check_board.parse_san(val)
+                                excluded_uci.add(m.uci())
+                            except Exception:
+                                try:
+                                    m = chess.Move.from_uci(val)
+                                    excluded_uci.add(m.uci())
+                                except Exception:
+                                    pass
+
+                for w in words:
+                    if not w or len(w) > 7:
+                        continue
+                    try:
+                        mv = check_board.parse_san(w)
+                        if mv.uci() not in seen_uci and mv.uci() not in excluded_uci:
+                            seen_uci.add(mv.uci())
+                            check_board.push(mv)
+                            mv_eval = await engine_manager.evaluate_position(check_board, depth=10)
+                            check_board.pop()
+                            san_name = check_board.san(mv)
+                            score_txt = mv_eval.get("score", "+0.0")
+                            candidate_evals.append({
+                                "san": san_name,
+                                "uci": mv.uci(),
+                                "score": score_txt,
+                                "eval_val": mv_eval.get("eval_val", 0.0)
+                            })
+                    except Exception:
+                        pass
+
         if req.mode == "raw_fen":
             prompt = ChessTranslator.translate_raw_fen_mode(req.fen, req.question)
         else:
-            prompt = ChessTranslator.translate_position_to_human(board, eval_res, req.question)
+            prompt = ChessTranslator.translate_position_to_human(
+                board, 
+                eval_res, 
+                req.question, 
+                reviewed_move=req.reviewed_move,
+                candidate_evals=candidate_evals,
+                chat_history=req.chat_history
+            )
 
         if req.practice_subject:
             prompt += f"\n\nFocus Practice Subject: {req.practice_subject}"
@@ -651,7 +722,7 @@ async def explain_position(req: MentorExplainRequest):
             rules_str = "\nActive Board Checklist & Alerts:\n" + "\n".join([f"- {r.get('icon', '🛡️')} {r.get('title', '')}: {r.get('text', '')}" for r in req.turn_guidelines[:3]])
             prompt += f"\n{rules_str}"
 
-        mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id)
+        mentor_res = await mentor_service.query_mentor(prompt, notebook_id=req.notebook_id, timeout=90.0)
 
         return {
             "fen": board.fen(),
@@ -936,6 +1007,9 @@ async def analyze_history_move(req: MoveAnalysisRequest):
     after.push(move)
     if req.expected_fen_after and req.expected_fen_after.split()[0] != after.board_fen():
         raise HTTPException(status_code=400, detail="Stored position does not match the move chain - the recorded game is inconsistent.")
+    if not before.is_valid() or not after.is_valid():
+        return {"success": False, "error": f"Position is not a valid chess position ({'before move' if not before.is_valid() else 'after move'})."}
+
     depth = max(6, min(22, req.depth or 14))
     eval_before = await engine_manager.analyse_for_review(before, depth)
     eval_after = await engine_manager.analyse_for_review(after, depth)
@@ -947,6 +1021,51 @@ async def analyze_history_move(req: MoveAnalysisRequest):
                             req.uci_path if from_start else None)
     analysis["engine"]["analyzed_at"] = datetime.utcnow().isoformat()
     return {"success": True, "analysis": analysis}
+
+
+class VisualizeClassificationRequest(BaseModel):
+    fen_before: Optional[str] = None
+    fen_after: str
+    move_uci: str
+    best_move_uci: Optional[str] = None
+    quality: Optional[str] = None
+    primary_motif: Optional[Dict[str, Any]] = None
+    motifs_against: Optional[List[Dict[str, Any]]] = None
+    motifs_for: Optional[List[Dict[str, Any]]] = None
+    pv_moves: Optional[List[str]] = None
+
+
+@app.post("/api/analysis/visualize-classification")
+async def api_visualize_classification(req: VisualizeClassificationRequest):
+    """
+    Computes real-time geometric board visualization layer for a classified move:
+    - Missed and allowed fork branching arrows
+    - Undefended piece warnings and attacker arrows
+    - Pin rays and skewer lines
+    - Back-rank corridor threats
+    - Multi-step forced refutation sequence
+    """
+    pv = req.pv_moves
+    if not pv and engine_manager and req.quality in ["Blunder", "Mistake"]:
+        try:
+            b = chess.Board(req.fen_after)
+            eval_res = await engine_manager.evaluate_position(b, depth=10)
+            pv = eval_res.get("pv") or ([eval_res.get("best_move")] if eval_res.get("best_move") else None)
+        except Exception:
+            pass
+
+    res = compute_move_classification_visualization(
+        fen_before=req.fen_before,
+        fen_after=req.fen_after,
+        move_uci=req.move_uci,
+        best_move_uci=req.best_move_uci,
+        quality=req.quality,
+        primary_motif=req.primary_motif,
+        motifs_against=req.motifs_against,
+        motifs_for=req.motifs_for,
+        pv_moves=pv
+    )
+    return res
 
 
 class RepairChainRequest(BaseModel):
@@ -1318,11 +1437,34 @@ CRITICAL STRUCTURAL INSTRUCTIONS FOR YOUR REPORT:
 # Global Data Stores for User Profiles, Skill Matrix & Diagnostic Placement
 PROFILES_FILE = os.path.join(os.path.dirname(__file__), "user_profiles.json")
 
+def sanitize_profile(p: Dict[str, Any]) -> Dict[str, Any]:
+    history = p.get("history", [])
+    if history:
+        history = [ev for ev in history if ev.get("id") != "evt_live_1791920612523" and not (
+            ev.get("moves") and len(ev.get("moves", [])) == 1 and ev["moves"][0].get("move_number", 1) > 1 and not ev["moves"][0].get("parent_id")
+        )]
+        for ev in history:
+            if ev.get("id") == "evt_riddle_8":
+                ev["startingFen"] = "k7/8/8/8/8/8/1R6/2R1K3 w - - 0 1"
+                if ev.get("moves"):
+                    m = ev["moves"][0]
+                    m["move_san"] = "Ra1#"
+                    m["move_uci"] = "c1a1"
+                    m["fen"] = "k7/8/8/8/8/8/1R6/R3K3 b - - 1 1"
+                    if "analysis_error" in m:
+                        del m["analysis_error"]
+                    if m.get("analysis", {}).get("context"):
+                        m["analysis"]["context"]["fen_before"] = "k7/8/8/8/8/8/1R6/2R1K3 w - - 0 1"
+                        m["analysis"]["context"]["fen_after"] = "k7/8/8/8/8/8/1R6/R3K3 b - - 1 1"
+        p["history"] = history
+    return p
+
 def load_persisted_profiles():
     if os.path.exists(PROFILES_FILE):
         try:
             with open(PROFILES_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                return {k: sanitize_profile(v) for k, v in data.items()}
         except Exception as e:
             print("[load_persisted_profiles error]:", e)
     return {}
@@ -1435,7 +1577,7 @@ async def sync_user_profiles(req: SyncProfilesRequest):
     for p in req.profiles:
         pid = p.get("id")
         if pid:
-            USER_PROFILES[pid] = p
+            USER_PROFILES[pid] = sanitize_profile(p)
     if req.active_profile_id and req.active_profile_id in USER_PROFILES:
         ACTIVE_PROFILE_ID = req.active_profile_id
     save_persisted_profiles()
@@ -1791,6 +1933,58 @@ async def generate_adaptive_exercises(req: Dict[str, Any]):
         "success": True,
         "exercises": exercises,
         "count": len(exercises)
+    }
+
+
+class BabyStepDrillsRequest(BaseModel):
+    motif_id: str
+    root_fen: Optional[str] = None
+    move_san: Optional[str] = None
+    best_move_san: Optional[str] = None
+    best_move_uci: Optional[str] = None
+    player_color: Optional[str] = "w"
+    game_title: Optional[str] = None
+
+
+@app.post("/api/drills/generate-baby-steps")
+async def api_generate_baby_steps(req: BabyStepDrillsRequest):
+    """
+    Generate progressive baby-step drills (Stage 1: Clean Board, Stage 2: Warning Signs, Stage 3: Game Mastery)
+    """
+    return await generate_baby_step_progression(
+        motif_id=req.motif_id,
+        root_fen=req.root_fen,
+        move_san=req.move_san,
+        best_move_san=req.best_move_san,
+        best_move_uci=req.best_move_uci,
+        player_color=req.player_color or "w",
+        game_title=req.game_title,
+        engine_manager=engine_manager
+    )
+
+
+class GenerateLevelRiddleRequest(BaseModel):
+    motif_id: str
+    level: int = 1
+    exclude_ids: Optional[List[str]] = None
+
+
+@app.post("/api/drills/generate-level-riddle")
+async def api_generate_level_riddle(req: GenerateLevelRiddleRequest):
+    """
+    Generate or pick a fresh riddle for a specific motif and level (1, 2, or 3).
+    """
+    import backend.drill_bank as drill_bank
+    riddle = drill_bank.generate_new_riddle_for_level(
+        motif_id=req.motif_id,
+        level=req.level,
+        exclude_ids=req.exclude_ids
+    )
+    return {
+        "success": True,
+        "motif_id": req.motif_id,
+        "level": req.level,
+        "riddle": riddle
     }
 
 
